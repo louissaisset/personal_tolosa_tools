@@ -1,0 +1,21 @@
+# Ignorer les environnements virtuels
+venv/
+
+# Ignorer les fichiers temporaires de PyCharm
+.idea/
+
+# Ignorer les fichiers temporaires de VSCode
+.vscode/
+
+# Ignorer les fichiers de build
+build/
+dist/
+*.egg-info/
+
+# Ignorer les fichiers de cache
+__pycache__/
+*.pyc
+*.pyo
+
+# Ignorer les fichiers de configuration spécifiques à l'utilisateur
+.env
