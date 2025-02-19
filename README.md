@@ -11,29 +11,22 @@ personal_tolosa_tools/
 │
 ├── personal_tolosa_tools/
 │   ├── __init__.py
-│   ├── generation/
-│   │   ├── __init__.py
-│   │   └── create_meshtool_yaml.py
-│   ├── launching/
-│   │   ├── __init__.py
-│   │   └── launch_meshtool_all_tools.py
-│   ├── treatment/
-│   │   ├── __init__.py
-│   │   ├── local_vtk_reader.py
-│   │   └── local_fig_creator.py
-│
+│   ├── create_meshtool_yaml.py
+│   └── local_vtk_reader.py
 ├── scripts/
-│   ├── main_create.py
-│   └── script2.py
-│
+│   ├── tools
+│   │   ├── launch_meshtool_yaml_all_tools.py
+│   │   ├── launch_meshtool_yaml.py
+│   │   ├── launch_yaml_create_default.py
+│   │   └── launch_yaml_update.pymain_create.py
+│   └── wip
+│       ├── Test_de_base.py
+│       └── main_claude.py
 ├── README.md
 └── .gitignore
 ```
 
 - **personal_tolosa_tools/** : Dossier contenant l'ensemble des classes et fonctions définies pour générer, lancer ou post-traiter des simulations TOLOSA
-   - **generation/** : Contient les classes et fonctions permettant de générer des maillages ou des forçages.
-    - **launching/** : Contient les classes et fonctions permettant de lancer les jobs
-    - **treatment/** : Contient les classes et fonctions permettant de lire et de modifier les sorties des différents modèles
 - **scripts/** : Contient des scripts faisant usage des classes et des fonctions définies précédemment
 
 
