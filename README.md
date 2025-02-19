@@ -1,6 +1,6 @@
-# TOLOSA Toolbox
+# Personal TOLOSA Toolbox
 
-Ceci est une collection de classes et de fonctions conçues pour créer des configurations TOLOSA, lancer les configurations correspondantes sur des calculateurs déportés et traiter les sorties de ces simulations.
+Ceci est une collection de classes et de fonctions conçues par Louis Saisset pour créer des configurations TOLOSA, lancer les configurations correspondantes sur des machines déportées et traiter les sorties de ces simulations.
 
 ## Organisation
 
