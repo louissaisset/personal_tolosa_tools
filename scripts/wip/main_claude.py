@@ -14,13 +14,11 @@ from vtk_plotter_lib import VTKDataReader, VTKDataProcessor, VTKPlotter
 
 if __name__ == "__main__":
     
-    a = VTKPlotter()
-    
-    print(a.__dict__)
-    sys.exit()
     # Initialize parameters
     vtk_directory = os.getcwd()
     output_dir = os.path.join(vtk_directory, 'Figures')
+    sys.exit()
+    
     timestep = int(sys.argv[1])
     
     # Initialize classes
