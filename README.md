@@ -4,11 +4,12 @@ Ceci est une collection de classes et de fonctions conçues pour créer des conf
 
 ## Organisation
 
-Ce projet est organisé comme suit
+Ce projet est organisé comme suit :
 
-tolosa_toolbox/
+```
+personal_tolosa_tools/
 │
-├── tolosa_toolbox/
+├── personal_tolosa_tools/
 │   ├── __init__.py
 │   ├── generation/
 │   │   ├── __init__.py
@@ -27,6 +28,13 @@ tolosa_toolbox/
 │
 ├── README.md
 └── .gitignore
+```
 
+- **personal_tolosa_tools/** : Dossier contenant l'ensemble des classes et fonctions définies pour générer, lancer ou post-traiter des simulations TOLOSA
+ - **generation/** : Contient les classes et fonctions permettant de générer des maillages ou des forçages.
+ - **launching/** : Contient les classes et fonctions permettant de lancer les jobs
+ - **treatment/** : Contient les classes et fonctions permettant de lire et de modifier les sorties des différents modèles
+- **scripts/** : Contient des scripts faisant usage des classes et des fonctions définies précédemment
+- **examples/** : Contient des exemples d'utilisation de la toolbox.
 
 
