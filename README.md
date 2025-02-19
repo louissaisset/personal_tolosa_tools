@@ -31,10 +31,9 @@ personal_tolosa_tools/
 ```
 
 - **personal_tolosa_tools/** : Dossier contenant l'ensemble des classes et fonctions définies pour générer, lancer ou post-traiter des simulations TOLOSA
- - **generation/** : Contient les classes et fonctions permettant de générer des maillages ou des forçages.
- - **launching/** : Contient les classes et fonctions permettant de lancer les jobs
- - **treatment/** : Contient les classes et fonctions permettant de lire et de modifier les sorties des différents modèles
+   - **generation/** : Contient les classes et fonctions permettant de générer des maillages ou des forçages.
+    - **launching/** : Contient les classes et fonctions permettant de lancer les jobs
+    - **treatment/** : Contient les classes et fonctions permettant de lire et de modifier les sorties des différents modèles
 - **scripts/** : Contient des scripts faisant usage des classes et des fonctions définies précédemment
-- **examples/** : Contient des exemples d'utilisation de la toolbox.
 
 
