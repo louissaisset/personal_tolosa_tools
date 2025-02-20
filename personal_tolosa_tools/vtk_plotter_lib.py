@@ -193,6 +193,8 @@ class VTKPlotter:
     """
     def __init__(self, 
                  figure_outputdir: str = './Figures/', 
+                 figure_title: str = '', 
+                 figure_filename: str = '', 
                  figure_size: tuple = (4, 4),
                  figure_dpi: int = 300,
                  figure_xlim: tuple = (None, None),
@@ -201,13 +203,17 @@ class VTKPlotter:
                  figure_labelfontsize: int = 8,
                  figure_tickfontsize: int = 7,
                  
-                 timestep: int = 0,
+                 # timestep: int = 0,
                  
                  pcolor_key: str = 'ssh',
-                 pcolor_max: float = 1, 
-                 pcolor_min: float = -1, 
+                 pcolor_max: float = None, 
+                 pcolor_min: float = None, 
                  pcolor_cmap: str = 'RdBu',
                  pcolor_units: str = 'm',
+                 
+                 triplot: bool = False,
+                 triplot_color: str = 'seagreen',
+                 triplot_linewidth: float = 0.2,
                  
                  contour_key: str = 'bathy',
                  contour_levels: int = 4,
@@ -230,6 +236,8 @@ class VTKPlotter:
         
         Args:
             figure_outputdir (str): Directory to save output figures, Defaults to './Figures/'
+            figure_title (str): The figure title, Defaults to ''
+            figure_filename (str): Filename with which the figure is saved, Defaults to '', (will be created through the autofilename method)
             figure_size (tuple, optional): Figure size in inches. Defaults to (4,4).
             figure_dpi (int, optional): Resolution of the figure. Defaults to 300.
             figure_xlim (tuple, optional): X axis view limit in the x units. Defaults to (None None).
@@ -238,13 +246,15 @@ class VTKPlotter:
             figure_labelfontsize (int, optional): Fontsize of all axis labels outside the axis. Defaults to 8
             figure_tickfontsize (int, optional): Fontsize of all axis labels outside the axis. Defaults to 8
             
-            timestep (int, optional): Timestep corresponding to the data. Defaults to 4.
-            
             pcolor_key (str, optional): Key name for the data displayed as pcolor. Defaults to 'ssh'.
             pcolor_max (float, optional): Maximum value for color scaling. Defaults to 1.
             pcolor_min (float, optional): Minimum value for color scaling. Defaults to -1.
             pcolor_cmap (str, optional): Colormap name. Defaults to 'RdBu'.
             pcolor_units (str, optional): Pcolor data units. Defaults to 'm'.
+            
+            triplot (Bool, optional): Bool flag to plot the tripcolor grid. Defaults to False.
+            triplot_color (str, optional): Color of the triplot unstructured grid. Defaults to 'seagreen',
+            triplot_linewidth (float, optional): Linewith of the triplot unstructured grid. Defaults to 0.2,
             
             contour_key (str, optional): Key name for the data displayed as contour. Defaults to 'bathy'.
             contour_levels (int, optional): Number of contours displayed. Defaults to 4,
@@ -262,7 +272,12 @@ class VTKPlotter:
             quiver_units (str, optional): Quiver data units. Defaults to 'm/s'.
             quiver_fontsize (int, optional): Fontsize of quiverkey. Defaults to 8
         """
+        # timestep (int, optional): Timestep corresponding to the data. Defaults to 4.
+        
+        
         self.figure_outputdir = figure_outputdir
+        self.figure_title= figure_title 
+        self.figure_filename = figure_filename
         self.figure_size = figure_size
         self.figure_dpi = figure_dpi
         self.figure_xlim = figure_xlim
@@ -271,13 +286,17 @@ class VTKPlotter:
         self.figure_labelfontsize = figure_labelfontsize
         self.figure_tickfontsize = figure_tickfontsize
         
-        self.timestep = timestep
+        # self.timestep = timestep
         
         self.pcolor_key = pcolor_key
         self.pcolor_max = pcolor_max
         self.pcolor_min = pcolor_min
         self.pcolor_cmap = pcolor_cmap
         self.pcolor_units = pcolor_units
+        
+        self.triplot = triplot
+        self.triplot_color = triplot_color
+        self.triplot_linewidth = triplot_linewidth
         
         self.contour_key = contour_key
         self.contour_levels = contour_levels
@@ -297,7 +316,8 @@ class VTKPlotter:
         
         if not os.path.exists(figure_outputdir):
             os.makedirs(figure_outputdir)
-    
+            
+            
     def _setup_figure(self) -> typing.Tuple[plt.Figure, plt.Axes]:
         """
         Create and setup the figure and axes.
@@ -308,8 +328,6 @@ class VTKPlotter:
         fig, ax = plt.subplots(1, 1, 
                                figsize=self.figure_size, 
                                dpi=self.figure_dpi)
-        ax.set_xlim(*self.figure_xlim)
-        ax.set_ylim(*self.figure_ylim)
         ax.set_aspect(1)
         return fig, ax
 
@@ -334,14 +352,19 @@ class VTKPlotter:
                       fontsize=self.figure_tickfontsize)
         cax.set_ylabel(f'{self.pcolor_key} in {self.pcolor_units}',
                        fontsize=self.figure_labelfontsize)
-    
-    def _finalize_figure(self, fig: plt.Figure, ax: plt.Axes) -> None:
+        
+    def _adjust_axes(self, fig: plt.Figure, ax: plt.Axes) -> None:
         """
-        Finalize the figure by adding grid and adjusting ticks.
+        Changes the figure ax by adding grid and adjusting ticks.
         
         Args:
             ax (plt.Axes): Matplotlib axes to finalize
         """
+        
+        # Adjust limits
+        ax.set_xlim(self.figure_xlim)
+        ax.set_ylim(self.figure_ylim)
+        
         # Adjust ticks
         ax.tick_params(axis='both', direction='in', 
                        labelsize = self.figure_tickfontsize)
@@ -358,14 +381,36 @@ class VTKPlotter:
         
         # Add grid
         ax.grid(linestyle='dashed', zorder=1)
+    
+    def auto_filename(self):
+        key_list = [self.pcolor_key, 
+                    self.contour_key, 
+                    self.quiver_u_key, 
+                    self.quiver_v_key]
+        # fig_title = f"{self.pcolor_key}_{self.contour_key}_{self.quiver_u_key}_{self.quiver_v_key}_{self.timestep:05d}.{self.figure_format}"
+        fig_filename = '_'.join(filter(None, key_list))
+        return fig_filename
+    
+    
+    def _finalize_figure(self, fig: plt.Figure, ax: plt.Axes) -> None:
+        """
+        Finalize the figure by a suptitle and saving.
+        
+        Args:
+            ax (plt.Axes): Matplotlib axes to finalize
+        """
         
         # Add title at the bottom
-        fig.suptitle(f'Iteration {self.timestep:05d}', y=0,
-                     fontsize=self.figure_labelfontsize)
+        ax.set_title(self.figure_title, fontsize=self.figure_labelfontsize)
         
         # Save the figure
-        fig_title = f"{self.pcolor_key}_{self.contour_key}_{self.quiver_u_key}_{self.quiver_v_key}_{self.timestep:05d}.{self.figure_format}"
-        fig.savefig(os.path.join(self.figure_outputdir, fig_title),
+        if self.figure_filename:
+            figure_filename = self.figure_filename
+        else:
+            figure_filename = self.auto_filename()
+        
+        fig.savefig(os.path.join(self.figure_outputdir, 
+                                 f"{figure_filename}.{self.figure_format}"),
                     format=self.figure_format, 
                     bbox_inches='tight')
         
@@ -409,7 +454,6 @@ class VTKPlotter:
                                  vmax=self.pcolor_max,
                                  cmap=self.pcolor_cmap, 
                                  zorder=0)
-            self._setup_colorbar(fig, ax, ssh_plot)
         
         # Plot bathymetry
         if self.contour_key:
@@ -441,7 +485,14 @@ class VTKPlotter:
                          fontproperties={'size':self.quiver_fontsize})
         
         
-        # Adjust the looks and save
+        # Adjust the axes and grid looks
+        self._adjust_axes(fig, ax)
+        
+        # Add the colorbar if any
+        if self.pcolor_key:
+            self._setup_colorbar(fig, ax, ssh_plot)
+        
+        # Ada a title and save
         self._finalize_figure(fig, ax)
     
     def plot_triangle_data(self, 
@@ -460,45 +511,58 @@ class VTKPlotter:
         """
         fig, ax = self._setup_figure()
         
-        # Plot SSH
-        ssh_plot = ax.tripcolor(tripcolor_tri, 
-                                cell_data[self.pcolor_key],
-                                vmin=self.pcolor_min, 
-                                vmax=self.pcolor_max,
-                                cmap=self.pcolor_cmap, 
-                                zorder=0)
+        # Plot SSH   
+        if self.pcolor_key:
+            ssh_plot = ax.tripcolor(tripcolor_tri, 
+                                    cell_data[self.pcolor_key],
+                                    vmin=self.pcolor_min, 
+                                    vmax=self.pcolor_max,
+                                    cmap=self.pcolor_cmap, 
+                                    zorder=0)
+        
+        # Plot the grid
+        if self.triplot:
+            ax.triplot(tripcolor_tri, 
+                       linewidth=self.triplot_linewidth, 
+                       color=self.triplot_color)
         
         # Plot bathymetry
-        bathy_plot = ax.tricontour(tricontour_tri, 
-                                   cell_data[self.contour_key],
-                                   levels=self.contour_levels, 
-                                   linestyles=self.dash_patterns(),
-                                   linewidths=self.contour_linewidths, 
-                                   colors=self.contour_colors,
-                                   zorder=2)
-        ax.clabel(bathy_plot, fontsize=self.contour_fontsize)
+        if self.contour_key:
+            bathy_plot = ax.tricontour(tricontour_tri, 
+                                       cell_data[self.contour_key],
+                                       levels=self.contour_levels, 
+                                       linestyles=self.dash_patterns(),
+                                       linewidths=self.contour_linewidths, 
+                                       colors=self.contour_colors,
+                                       zorder=2)
+            ax.clabel(bathy_plot, fontsize=self.contour_fontsize)
         
         # Plot currents
-        random_indices = np.random.choice(len(cell_data[self.quiver_u_key]),
-                                          size=len(cell_data[self.quiver_u_key])//self.quiver_spacing,
-                                          replace=False)
-        current_plot = ax.quiver(cell_centers[:,0][random_indices],
-                                 cell_centers[:,1][random_indices],
-                                 cell_data[self.quiver_u_key][random_indices],
-                                 cell_data[self.quiver_v_key][random_indices],
-                                 scale=self.quiver_scale, 
-                                 scale_units='width', 
-                                 zorder=10)
-        ax.quiverkey(current_plot, 
-                     self.quiver_positionkey[0], 
-                     self.quiver_positionkey[1],  
-                     self.quiver_lengthkey, 
-                     f'{self.quiver_lengthkey} {self.quiver_units}', 
-                     labelpos='E',
-                     fontproperties={'size':self.quiver_fontsize})
+        if self.quiver_u_key and self.quiver_v_key:
+            random_indices = np.random.choice(len(cell_data[self.quiver_u_key]),
+                                              size=len(cell_data[self.quiver_u_key])//self.quiver_spacing,
+                                              replace=False)
+            current_plot = ax.quiver(cell_centers[:,0][random_indices],
+                                     cell_centers[:,1][random_indices],
+                                     cell_data[self.quiver_u_key][random_indices],
+                                     cell_data[self.quiver_v_key][random_indices],
+                                     scale=self.quiver_scale, 
+                                     scale_units='width', 
+                                     zorder=10)
+            ax.quiverkey(current_plot, 
+                         self.quiver_positionkey[0], 
+                         self.quiver_positionkey[1],  
+                         self.quiver_lengthkey, 
+                         f'{self.quiver_lengthkey} {self.quiver_units}', 
+                         labelpos='E',
+                         fontproperties={'size':self.quiver_fontsize})
         
-        # Add colorbar
-        self._setup_colorbar(fig, ax, ssh_plot)
+        # Adjust the axes and grid looks
+        self._adjust_axes(fig, ax)
         
-        # Adjust the looks and save
+        # Add the colorbar if any
+        if self.pcolor_key:
+            self._setup_colorbar(fig, ax, ssh_plot)
+        
+        # Ada a title and save
         self._finalize_figure(fig, ax)
