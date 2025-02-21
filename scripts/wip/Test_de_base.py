@@ -5,150 +5,120 @@
 Ceci est un script temporaire.
 """
 
-import vtk
+import sys, os
+sys.path.append("/local/home/lsaisset/DATA/Scripts/personal_tolosa_tools/")
+import personal_tolosa_tools as ptt
 
-from vtk.util import numpy_support as VN
+from pathlib import Path
 
-import matplotlib.pyplot as plt
-import numpy as np
-import os
+# print("    \033[31mERROR:\033[0m 
+# print("       \033[32mOK:\033[0m 
+# print("  \033[33mWARNING:\033[0m 
 
-# # Function to read VTK file and extract point data
-# def read_vtk_file(file_path):
-#     reader = vtk.vtkUnstructuredGridReader()
-#     reader.SetFileName(file_path)
-#     reader.Update()
-#     data = reader.GetOutput()
+
+def main():
     
-#     points = data.GetPoints()
-#     point_data = data.GetPointData()
+    print("\nBeginning script for comparing two vtk folders using the same grid")
     
-#     # Extract coordinates and scalar values
-#     coords = np.array([points.GetPoint(i) for i in range(points.GetNumberOfPoints())])
     
-#     # Assuming scalar values are in the first array of point data
-#     scalars = None
-#     if point_data.GetNumberOfArrays() > 0:
-#         scalars_array = point_data.GetArray(0)
-#         scalars = np.array([scalars_array.GetValue(i) for i in range(scalars_array.GetNumberOfTuples())])
+    
+    # Define paths to the VTK folders and output folder
+    folder1_path = Path("/local/home/lsaisset/DATA/tests_persos/Comparaison/version_datarmor/res/vtk/")
+    if not folder1_path.is_dir():
+        print("    \033[31mERROR:\033[0m Cannot proceed without a valid first folder")
+    folder1_path = folder1_path.resolve()
+    print(f"       \033[32mOK:\033[0m First input folder exists : {folder1_path}")
+        
 
-#     return coords, scalars
 
-# # Function to plot data
-# def plot_data(coords, scalars, output_file=None):
-#     if scalars is not None:
-#         plt.figure(figsize=(10, 6))
-#         scatter = plt.scatter(coords[:, 0], coords[:, 1], c=scalars, cmap='viridis')
-#         plt.colorbar(scatter, label='Scalar Value')
-#         plt.xlabel('X Coordinate')
-#         plt.ylabel('Y Coordinate')
-#         plt.title('VTK Scalar Field')
-#         if output_file:
-#             plt.savefig(output_file)
-#         else:
-#             plt.show()
-#     else:
-#         print("No scalar data available to plot.")
+    folder2_path = Path("/local/home/lsaisset/DATA/tests_persos/Comparaison/version_locale/res/vtk/")
+    if not folder2_path.is_dir():
+        print("    \033[31mERROR:\033[0m Cannot proceed without a valid second folder")
+    folder2_path = folder2_path.resolve()
+    print(f"       \033[32mOK:\033[0m Second input folder exists : {folder2_path}")
+    
+
+
+    folder_out_path = Path("/local/home/lsaisset/DATA/tests_persos/Comparaison/Figures")
+    print(f"       \033[32mOK:\033[0m Defined outfolder : {folder_out_path}")
+    
+    
+    timestep=0
+    # if len(sys.argv) > 1:
+    #     try:
+    #         timestep = int(sys.argv[1])
+    #         print(f"       \033[32mOK:\033[0m Asking for timestep : {timestep}")
+    #     except ValueError:
+    #         print("    \033[31mERROR:\033[0m Cannot proceed without a valid timestep")
+    #         return 1
+    # else:
+    #     print("    \033[31mERROR:\033[0m Cannot proceed without a valid timestep")
+
+
+    print("\nBeginning the plots creation...")
+    
+    # Initialize VTKDataReader for both folders
+    reader1 = ptt.VTKDataReader(folder1_path)
+    reader2 = ptt.VTKDataReader(folder2_path)
+
+    # Read the VTK files for the specified timestep
+    data1 = reader1.read_file(timestep)
+    data2 = reader2.read_file(timestep)
+    print("       \033[32mOK:\033[0m VTK data correctly read")
+
+    # Process the VTK data
+    processor1 = ptt.VTKDataProcessor(data1)
+    processor2 = ptt.VTKDataProcessor(data2)
+    print("       \033[32mOK:\033[0m VTK data correctly processed")
+
+
+    # Calculate the differences in cell data
+    cell_data_diff = processor1.compute_cell_data_differences(processor2)
+
+    if not cell_data_diff:
+        print("    \033[31mERROR:\033[0m No common cell data keys found between the two datasets.")
+        return 1
+    else:
+        print("       \033[32mOK:\033[0m Common cell data keys found : {cell_data_diff.keys()}")
+
+    # Configure the data plots
+    plotter = ptt.VTKPlotter(folder_out_path)
+
+    # Compute triangulations for plotting
+    tripcolor_tri, tricontour_tri = processor1.compute_triangulations()
+
+    # Set plotter configurations
+    plotter.figure_title = f"Timestep = {timestep:05d}"
+    plotter.figsize = (3, 3)
+    plotter.figure_tickfontsize = 5
+    plotter.contour_key = ''
+    plotter.quiver_u_key = ''
+    plotter.quiver_v_key = ''
+    plotter.pcolor_max = 1
+    plotter.pcolor_min = -plotter.pcolor_max
+
+    dico_units = {'ssh': '10^-7 m',
+                  'u': '10^-7 m/s',
+                  'v': '10^-7 m/s',
+                  'bathy': '10^-7 m'}
+
+    # Plot the differences for each key
+    for k in cell_data_diff.keys():
+        
+        plotter.figure_filename = f"{k}_{timestep:05d}"
+        plotter.pcolor_key = k
+        plotter.pcolor_units = dico_units[k]
+        plotter.plot_triangle_data(tripcolor_tri,
+                                   tricontour_tri,
+                                   cell_data_diff,
+                                   processor1.cell_centers_array)
+        print(f"       \033[32mOK:\033[0m Difference plot for key '{k}' generated successfully.")
 
 # Main script
 if __name__ == "__main__":
-    # Replace with the directory containing your VTK files
-    
-    vtk_directory = "/local/home/lsaisset/DATA/tests_persos/Test_base/V5/res/vtk"
+    exit(main())
+        
 
-    # List all .vtk files in the directory
-    vtk_files = [os.path.join(vtk_directory, f) for f in os.listdir(vtk_directory) if f.endswith(".vtk")]
-
-    # Sort files (optional, for chronological order if files are numbered)
-    vtk_files.sort()
-    
-    # for time in range(len(vtk_files)):
-    for time in range(1):
-        
-        vtk_file = vtk_files[time]
-        
-        reader = vtk.vtkUnstructuredGridReader()
-        reader.SetFileName(vtk_files[time])
-        reader.ReadAllVectorsOn()
-        reader.ReadAllScalarsOn()
-        reader.Update()
-        data = reader.GetOutput()
-        
-        num_cel = data.GetNumberOfCells()
-        num_pnt = data.GetNumberOfPoints()
-        One_cell_type = data.GetCell(0).GetCellType() # This is a cell type
         
         
-        points_data_array = np.array(data.GetPoints().GetData())
         
-        D0_name = data.GetCellData().GetArrayName(0)
-        D0_data = np.array(data.GetCellData().GetArray(0))
-        
-        D1_name = data.GetCellData().GetArrayName(1)
-        D1_data = np.array(data.GetCellData().GetArray(1))
-        
-        D2_name = data.GetCellData().GetArrayName(2)
-        D2_data = np.array(data.GetCellData().GetArray(2))
-        
-        Dico ={}
-        for i in range(data.GetCellData().GetNumberOfArrays()):
-            Dico[data.GetCellData().GetArrayName(i)] = np.array(data.GetCellData().GetArray(i))
-        
-        centerlist = []
-        for i in range(data.GetNumberOfCells()):
-            cell = data.GetCell(i)
-            num_points = cell.GetNumberOfPoints()
-            
-            center = np.array([0., 0., 0.])
-            for j in range(num_points):
-                point_id = cell.GetPointId(j)
-                point = data.GetPoints().GetPoint(point_id)
-                
-                center += np.array(point)/num_points
-                
-            
-            centerlist += [center]
-        centerlist = np.array(centerlist)
-            
-        
-        fig, ax = plt.subplots(1,1)
-        ax.scatter(centerlist[:,0],centerlist[:,1], c=Dico['ssh'], vmin=-5, vmax=5)
-        ax.set_aspect(1)
-        
-        
-        fig, ax = plt.subplots(1,1)
-        ax.quiver(centerlist[:,0], centerlist[:,1], Dico['u'], Dico['v'])
-        ax.set_aspect(1)
-        
-        
-        fig, ax = plt.subplots(1,1)
-        ax.tripcolor(centerlist[:,0],centerlist[:,1], D, vmin=-5, vmax=5)
-        ax.set_aspect(1)
-        
-        
-    
-    
-    
-    
-    
-    # coords, scalars = read_vtk_file(vtk_files[0])
-    
-    
-    
-    
-    # Iterate over VTK files, read and plot data
-    # for idx, vtk_file in enumerate(vtk_files[:100]):
-    #     print(f"Processing file {idx + 1}/{len(vtk_files)}: {vtk_file}")
-    #     coords, scalars = read_vtk_file(vtk_file)
-        
-    #     # Save the plot for each file
-    #     output_plot = f"vtk_plot_{idx + 1}.png"
-    #     plot_data(coords, scalars, output_file=output_plot)
-    #     print(f"Plot saved: {output_plot}")
-
-
-    # for i in range(10):
-        
-    #     plt.figure()
-    #     plt.plot(np.arange(10), 2.*np.arange(10))
-    #     plt.show()

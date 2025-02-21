@@ -49,7 +49,7 @@ class VTKDataReader:
         Read VTK file for a given time step.
         
         Args:
-            time_step (int): Index of the time step to read
+            time_step (int): Index of the VTK file to be read
         
         Returns:
             VTK unstructured grid data
@@ -78,22 +78,83 @@ class VTKDataProcessor:
             data (vtk.vtkUnstructuredGrid): Input VTK data
         """
         self.data = data
-        self.points, self.num_points, self.cells, self.num_cells, self.cell_type = self._extract_points_cells()
-        self.cell_data, self.cell_centers, self.points_array = self._create_cell_data()
+        self.points, self.num_points = self._extract_points()
+        self.cells, self.num_cells= self._extract_cells()
+        self.edgepoints, self.num_edgepoints = self._extract_edgepoints()
+        self.cell_type = self._extract_celltype()
+        self.cell_data = self._create_cell_data_dict()
+        self.cell_centers_array = self._create_cell_center_array()
+        self.points_array = self._create_points_array()
+        self.edgepoints_array = self._create_edgepoints_array()
+        self.xmin, self.xmax, self.ymin, self.ymax = self.get_data_lims()
         
-    def _extract_points_cells(self) -> typing.Tuple:
+    def _extract_points(self) -> typing.Tuple:
         """
-        Extract points and cells information from VTK data.
+        Extract points and point number from VTK data.
         
         Returns:
-            Tuple containing points, number of points, cells, number of cells, and cell type
+            Tuple containing points, number of points
         """
         points = self.data.GetPoints()
         num_points = self.data.GetNumberOfPoints()
+        
+        return points, num_points
+    
+    def _extract_cells(self) -> typing.Tuple:
+        """
+        Extract cells and number of cells from VTK data.
+        
+        Returns:
+            Tuple containing points, number of points
+        """
         cells = self.data.GetCells()
         num_cells = self.data.GetNumberOfCells()
         
-        cell_types = [self.data.GetCell(i).GetCellType() for i in range(num_cells)]
+        return cells, num_cells
+    
+    def _extract_edgepoints(self) -> typing.Tuple:
+        """
+        Extract points and point number from the edge of VTK data.
+        
+        Returns:
+            Tuple containing edgepoints, number of edgepoints
+        """
+        
+        # Convert vtkUnstructuredGrid to vtkPolyData
+        geometry_filter = vtk.vtkGeometryFilter()
+        geometry_filter.SetInputData(self.data)
+        geometry_filter.Update()
+        # poly_data = geometry_filter.GetOutput()
+        
+        # connectivity_filter = vtk.vtkConnectivityFilter()
+        # connectivity_filter.SetInputData(poly_data)
+        # connectivity_filter.SetExtractionModeToLargestRegion()
+        # connectivity_filter.Update()
+    
+        # largest_component = connectivity_filter.GetOutput()
+        
+        feature_edges = vtk.vtkFeatureEdges()
+        feature_edges.SetInputConnection(geometry_filter.GetOutputPort())
+        feature_edges.BoundaryEdgesOn()
+        feature_edges.FeatureEdgesOff()
+        feature_edges.ManifoldEdgesOff()
+        feature_edges.NonManifoldEdgesOff()
+        feature_edges.Update()
+        
+        edgepoints = feature_edges.GetOutput().GetPoints()
+        num_edgepoints = feature_edges.GetOutput().GetNumberOfPoints()
+        
+        return edgepoints, num_edgepoints
+    
+    def _extract_celltype(self) -> str:
+        """
+        Extract the cell type of cells from VTK data.
+        
+        Returns:
+            'all_Quad' if all cells are of type 9 and 'all_Triangle' if all 
+            cells are of type 5.
+        """
+        cell_types = [self.data.GetCell(i).GetCellType() for i in range(self.num_cells)]
         
         if all(ct == 9 for ct in cell_types):
             cell_type = 'all_Quad'
@@ -102,14 +163,14 @@ class VTKDataProcessor:
         else:
             cell_type = np.unique(cell_types)
             
-        return points, num_points, cells, num_cells, cell_type
+        return cell_type
     
-    def _create_cell_data(self) -> typing.Tuple:
+    def _create_cell_data_dict(self) -> dict:
         """
-        Create dictionary of cell data and compute cell centers.
+        Create dictionary of cell data.
         
         Returns:
-            Tuple containing cell data dictionary, cell centers, and points array
+            Dictionary containing the cell data entries and values in cell order
         """
         # Create dictionary of cell data
         cell_data = {}
@@ -117,18 +178,50 @@ class VTKDataProcessor:
             name = self.data.GetCellData().GetArrayName(i)
             cell_data[name] = np.array(self.data.GetCellData().GetArray(i))
         
+        return cell_data
+    
+    def _create_cell_center_array(self) -> np.array:
+        """
+        Returns:
+            Numpy array containing the cell center coordinates
+        """
         # Compute cell centers
-        cell_centers = np.zeros([self.num_cells, 3])
+        cell_centers_array = np.zeros([self.num_cells, 3])
         for i in range(self.num_cells):
             cell = self.data.GetCell(i)
             num_cell_points = cell.GetNumberOfPoints()
             for j in range(num_cell_points):
                 point = self.points.GetPoint(cell.GetPointId(j))
-                cell_centers[i, :] += np.array(point)/num_cell_points
+                cell_centers_array[i, :] += np.array(point)/num_cell_points
         
-        points_array = np.array(self.points.GetData())
+        return cell_centers_array
+    
+    def _create_points_array(self) -> np.array:
+        """
+        Returns:
+            Numpy array containing points coordinates
+        """
         
-        return cell_data, cell_centers, points_array
+        return np.array(self.points.GetData())
+
+    def _create_edgepoints_array(self) -> np.array:
+        """
+        Returns:
+            Numpy array containing edgepoints coordinates
+        """
+        
+        return np.array(self.edgepoints.GetData())
+    
+    def get_data_lims(self) -> typing.Tuple:
+        """
+        Returns the X and Y limits of the grid
+        """
+        xmin = np.nanmin(self.points_array[:, 0])
+        xmax = np.nanmax(self.points_array[:, 0])
+        ymin = np.nanmin(self.points_array[:, 1])
+        ymax = np.nanmax(self.points_array[:, 1])
+        
+        return (xmin, xmax, ymin, ymax)
     
     def reshape_to_grid(self) -> typing.Tuple:
         """
@@ -137,10 +230,10 @@ class VTKDataProcessor:
         Returns:
             Tuple of grid X coordinates, grid Y coordinates, and reshaped cell data
         """
-        shape = [len(np.unique(self.cell_centers[:, 0])),
-                len(np.unique(self.cell_centers[:, 1]))]
-        center_grid_X = self.cell_centers[:, 0].reshape(shape)
-        center_grid_Y = self.cell_centers[:, 1].reshape(shape)
+        shape = [len(np.unique(self.cell_centers_array[:, 0])),
+                len(np.unique(self.cell_centers_array[:, 1]))]
+        center_grid_X = self.cell_centers_array[:, 0].reshape(shape)
+        center_grid_Y = self.cell_centers_array[:, 1].reshape(shape)
         cell_data_grid = {k: v.reshape(shape) for k, v in self.cell_data.items()}
         return center_grid_X, center_grid_Y, cell_data_grid
     
@@ -164,14 +257,14 @@ class VTKDataProcessor:
         
         # Compute tricontour triangulation
         tricontour_triangulation = mpl.tri.Triangulation(
-            self.cell_centers[:, 0],
-            self.cell_centers[:, 1])
+            self.cell_centers_array[:, 0],
+            self.cell_centers_array[:, 1])
         
         # Create mask
-        xtri = self.cell_centers[:, 0][tricontour_triangulation.triangles] - \
-               np.roll(self.cell_centers[:, 0][tricontour_triangulation.triangles], 1, axis=1)
-        ytri = self.cell_centers[:, 1][tricontour_triangulation.triangles] - \
-               np.roll(self.cell_centers[:, 1][tricontour_triangulation.triangles], 1, axis=1)
+        xtri = self.cell_centers_array[:, 0][tricontour_triangulation.triangles] - \
+               np.roll(self.cell_centers_array[:, 0][tricontour_triangulation.triangles], 1, axis=1)
+        ytri = self.cell_centers_array[:, 1][tricontour_triangulation.triangles] - \
+               np.roll(self.cell_centers_array[:, 1][tricontour_triangulation.triangles], 1, axis=1)
         sizes = np.array([np.array(self.data.GetCell(i).GetBounds()[0::2]) - 
                          np.array(self.data.GetCell(i).GetBounds()[1::2]) 
                          for i in range(self.num_cells)])
@@ -179,7 +272,33 @@ class VTKDataProcessor:
         tricontour_triangulation.set_mask(np.max(np.sqrt(xtri**2 + ytri**2), axis=1) > max_size)
         
         return tripcolor_triangulation, tricontour_triangulation
-
+    
+    def compute_cell_data_differences(self, other_processor) -> dict:
+        
+        # Check if the cell centers are the same in both datasets
+        N_equal_cells = (self.cell_centers_array == other_processor.cell_centers_array).sum()
+        if N_equal_cells != 3*self.num_cells:
+            print("    \033[31mERROR:\033[0m The cell centers do not match between the two datasets.")
+            return {}
+    
+        # Extract cell data
+        cell_data1 = self.cell_data
+        cell_data2 = other_processor.cell_data
+    
+        # Calculate the differences in cell data
+        cell_data_diff = {k: (cell_data1[k] - cell_data2[k]) for k in cell_data1.keys() if k in cell_data2.keys()}
+        
+        return cell_data_diff
+    
+    def interp_upon_regular_grid(self, ):
+        return
+    
+    
+    # def create_mask_path_N(self, X, Y, N):
+    #     boundary_path = mpltPath.Path(largest_boundary[:,0:2])
+    #     points = np.column_stack((X.ravel(), Y.ravel()))
+    #     mask = boundary_path.contains_points(points).reshape(X.shape)
+    #     return(mask)
 
 class VTKPlotter:
     """
@@ -346,6 +465,10 @@ class VTKPlotter:
                            ax.get_position().height])
         fig.colorbar(mappable, cax=cax)
         cax.tick_params(axis='y', direction='in')
+        # cax.ticklabel_format(axis='y', 
+        #                      style='sci', 
+        #                      # scilimits=(-2,4), 
+        #                      useOffset=False)
         cax.set_yticks(cax.get_yticks()[1:-1],
                       labels=cax.get_yticklabels()[1:-1],
                       rotation=90, va='center',
@@ -448,7 +571,7 @@ class VTKPlotter:
         
         # Plot SSH   
         if self.pcolor_key:
-            ssh_plot = ax.pcolor(center_grid_X, center_grid_Y, 
+            pcolor_plot = ax.pcolor(center_grid_X, center_grid_Y, 
                                  cell_data[self.pcolor_key],
                                  vmin=self.pcolor_min, 
                                  vmax=self.pcolor_max,
@@ -457,26 +580,26 @@ class VTKPlotter:
         
         # Plot bathymetry
         if self.contour_key:
-            bathy_plot = ax.contour(center_grid_X, center_grid_Y, 
+            contour_plot = ax.contour(center_grid_X, center_grid_Y, 
                                     cell_data[self.contour_key],
                                     levels=self.contour_levels, 
                                     linestyles=self.generate_custom_dash_patterns(),
                                     linewidths=self.contour_linewidths, 
                                     colors=self.contour_colors, 
                                     zorder=2)
-            ax.clabel(bathy_plot, fontsize=self.contour_fontsize)
+            ax.clabel(contour_plot, fontsize=self.contour_fontsize)
         
         # Plot currents
         if self.quiver_u_key and self.quiver_v_key:
             N = self.quiver_spacing
-            current_plot = ax.quiver(center_grid_X[::N, ::N], 
+            quiver_plot = ax.quiver(center_grid_X[::N, ::N], 
                                      center_grid_Y[::N, ::N],
                                      cell_data[self.quiver_u_key][::N, ::N], 
                                      cell_data[self.quiver_v_key][::N, ::N],
                                      scale=self.quiver_scale, 
                                      scale_units='width', 
                                      zorder=10)
-            ax.quiverkey(current_plot, 
+            ax.quiverkey(quiver_plot, 
                          self.quiver_positionkey[0], 
                          self.quiver_positionkey[1], 
                          self.quiver_lengthkey, 
@@ -490,7 +613,7 @@ class VTKPlotter:
         
         # Add the colorbar if any
         if self.pcolor_key:
-            self._setup_colorbar(fig, ax, ssh_plot)
+            self._setup_colorbar(fig, ax, pcolor_plot)
         
         # Ada a title and save
         self._finalize_figure(fig, ax)
@@ -499,7 +622,7 @@ class VTKPlotter:
                            tripcolor_tri: mpl.tri.Triangulation,
                            tricontour_tri: mpl.tri.Triangulation,
                            cell_data: typing.Dict, 
-                           cell_centers: np.ndarray) -> None:
+                           cell_centers_array: np.ndarray) -> None:
         """
         Plot triangle cell data.
         
@@ -507,7 +630,7 @@ class VTKPlotter:
             tripcolor_tri (mpl.tri.Triangulation): Triangulation for color plot
             tricontour_tri (mpl.tri.Triangulation): Triangulation for contour plot
             cell_data (Dict): Dictionary of cell data
-            cell_centers (np.ndarray): Cell center coordinates
+            cell_centers_array (np.ndarray): Cell center coordinates
         """
         fig, ax = self._setup_figure()
         
@@ -542,8 +665,8 @@ class VTKPlotter:
             random_indices = np.random.choice(len(cell_data[self.quiver_u_key]),
                                               size=len(cell_data[self.quiver_u_key])//self.quiver_spacing,
                                               replace=False)
-            current_plot = ax.quiver(cell_centers[:,0][random_indices],
-                                     cell_centers[:,1][random_indices],
+            current_plot = ax.quiver(cell_centers_array[:,0][random_indices],
+                                     cell_centers_array[:,1][random_indices],
                                      cell_data[self.quiver_u_key][random_indices],
                                      cell_data[self.quiver_v_key][random_indices],
                                      scale=self.quiver_scale, 
