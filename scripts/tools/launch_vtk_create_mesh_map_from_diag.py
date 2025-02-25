@@ -16,13 +16,30 @@ from pathlib import Path
 # print("       \033[32mOK:\033[0m 
 # print("  \033[33mWARNING:\033[0m 
 
+def Plot(plotter, processor):
+    
+    print("       \033[32mOK:\033[0m Creating, plotting and saving")
+    # Plot based on cell type
+    if processor.cell_type == 'all_Quad':
+        center_grid_X, center_grid_Y, cell_data_grid = processor.reshape_to_grid()
+        plotter.plot_quad_data(center_grid_X, 
+                               center_grid_Y, 
+                               cell_data_grid)
+    elif processor.cell_type == 'all_Triangle':
+        tripcolor_tri, tricontour_tri = processor.compute_triangulations()
+        plotter.plot_triangle_data(tripcolor_tri, 
+                                   tricontour_tri,
+                                   processor.cell_data, 
+                                   processor.cell_centers_array)
+    print("       \033[32mOK:\033[0m Figure created and saved")
+
+
 def main():
     print("\nBeginning script for plotting the ith timestep in the VTK results folder...")
     
     # Initialize parameters
     current_path = Path.cwd()
     print(f"       \033[32mOK:\033[0m Launched from : {current_path}")
-    
     
     # Initialize classes
     reader = ptt.VTKDataReader(current_path)
@@ -32,7 +49,7 @@ def main():
         print("    \033[31mERROR:\033[0m Cannot proceed without a valid '_diag.vtk' file")
         return 1
     
-    output_dir = (current_path / 'Figures').resolve()
+    output_dir = (current_path / f'Figures_{current_path.name}').resolve()
     print(f"       \033[32mOK:\033[0m Defined Figure folder : {output_dir}")
     
     
@@ -47,8 +64,7 @@ def main():
     
     # Configure the data plots
     plotter = ptt.VTKPlotter(output_dir)
-    plotter.figure_filename = 'mesh'
-    plotter.figsize = (3,3)
+    plotter.figure_format = 'pdf'
     plotter.figure_tickfontsize = 5
     
     plotter.triplot = True
@@ -57,27 +73,54 @@ def main():
     plotter.quiver_u_key = ''
     plotter.quiver_v_key = ''
     
-    # plotter.figure_xlim = (-100000, -90000)
-    # plotter.figure_ylim = (-780000, -775000)
     
-    print(f"       \033[32mOK:\033[0m Defined the plotter arguments:")
+    
+    plotter.figure_filename = 'mesh_complet'
+    plotter.figure_size = (6,6)
+    print("       \033[32mOK:\033[0m Defined the plotter arguments:")
     print(plotter.__dict__)
+    Plot(plotter, processor)
     
     
-    print(f"       \033[32mOK:\033[0m Creating, plotting and saving")
-    # Plot based on cell type
-    if processor.cell_type == 'all_Quad':
-        center_grid_X, center_grid_Y, cell_data_grid = processor.reshape_to_grid()
-        plotter.plot_quad_data(center_grid_X, 
-                               center_grid_Y, 
-                               cell_data_grid)
-    elif processor.cell_type == 'all_Triangle':
-        tripcolor_tri, tricontour_tri = processor.compute_triangulations()
-        plotter.plot_triangle_data(tripcolor_tri, 
-                                   tricontour_tri,
-                                   processor.cell_data, 
-                                   processor.cell_centers_array)
-    print(f"       \033[32mOK:\033[0m Figure created and saved")
+    
+    plotter.figure_filename = 'mesh_zoom_ilelongue'
+    plotter.figure_size = (5,5)
+    plotter.figure_xlim = (-10000, -3000)
+    plotter.figure_ylim = (-4000, 1000)
+    print("       \033[32mOK:\033[0m Defined the plotter arguments:")
+    print(plotter.__dict__)
+    Plot(plotter, processor)
+    
+    
+    
+    plotter.figure_filename = 'mesh_zoom_port'
+    plotter.figure_size = (4,4)
+    plotter.figure_xlim = (-7000, -2000)
+    plotter.figure_ylim = (4500, 8500)
+    print("       \033[32mOK:\033[0m Defined the plotter arguments:")
+    print(plotter.__dict__)
+    Plot(plotter, processor)
+    
+    
+    
+    plotter.figure_filename = 'mesh_zoom_pointepenhir'
+    plotter.figure_size = (4,4)
+    plotter.figure_xlim = (-17000, -12000)
+    plotter.figure_ylim = (-10000, -5000)
+    print("       \033[32mOK:\033[0m Defined the plotter arguments:")
+    print(plotter.__dict__)
+    Plot(plotter, processor)
+    
+    
+    
+    plotter.figure_filename = 'mesh_zoom_bassinest'
+    plotter.figure_size = (4,4)
+    plotter.figure_xlim = (-1000, 4000)
+    plotter.figure_ylim = (-2000, 2000)
+    print("       \033[32mOK:\033[0m Defined the plotter arguments:")
+    print(plotter.__dict__)
+    Plot(plotter, processor)
+    
     
 if __name__ == "__main__":
     exit(main())

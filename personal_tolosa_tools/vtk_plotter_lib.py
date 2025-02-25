@@ -12,6 +12,8 @@ import vtk
 import numpy as np
 import matplotlib as mpl
 import matplotlib.pyplot as plt
+from matplotlib.path import Path
+from scipy.interpolate import LinearNDInterpolator, NearestNDInterpolator
 
 
 class VTKDataReader:
@@ -77,16 +79,25 @@ class VTKDataProcessor:
         Args:
             data (vtk.vtkUnstructuredGrid): Input VTK data
         """
-        self.data = data
-        self.points, self.num_points = self._extract_points()
-        self.cells, self.num_cells= self._extract_cells()
-        self.edgepoints, self.num_edgepoints = self._extract_edgepoints()
-        self.cell_type = self._extract_celltype()
-        self.cell_data = self._create_cell_data_dict()
-        self.cell_centers_array = self._create_cell_center_array()
-        self.points_array = self._create_points_array()
-        self.edgepoints_array = self._create_edgepoints_array()
-        self.xmin, self.xmax, self.ymin, self.ymax = self.get_data_lims()
+        # The vtk data structure
+        self.data = data                                                    # output of the reader for a file
+        
+        self.points, self.num_points = self._extract_points()               # the vtk object of the points and the int of the number of points
+        self.points_array = self._create_points_array()                     # a numpy array of the points position
+        
+        self.cells, self.num_cells= self._extract_cells()                   # the vtk object of the cells and the int of the number of cells
+        self.cell_centers_array = self._create_cell_center_array()          # a numpy array of the cell center position
+        self.cell_type = self._extract_celltype()                           # a str flag used in the plotter
+        self.cell_data = self._create_cell_data_dict()                      # a dict containing the cell data, in cell order
+        
+        self.boundary_edges = self._extract_boundary_edges()                # the vtk object of the edges constructing the boundaries of the grid
+        self.edgepoints, self.num_edgepoints = self._extract_edgepoints()   # the vtk object of the points on the boundaries and the int of the number of such points
+        self.edgepoints_array = self._create_edgepoints_array()             # a numpy array of the boundary points position 
+        
+        self.list_edge_point_ids = self._create_boundary_edges_connectors() # a list of lists of the point ids making the boundary edges
+        self.boundary_list = self._create_grouped_boundary_points_list()    # a list of numpy array cutted as independent set of boundaries
+        
+        self.xmin, self.xmax, self.ymin, self.ymax = self.get_data_lims()   # the min/max of the points coordinates
         
     def _extract_points(self) -> typing.Tuple:
         """
@@ -112,6 +123,31 @@ class VTKDataProcessor:
         
         return cells, num_cells
     
+    def _extract_boundary_edges(self):
+        """
+        Extract all boundary edges from the VTK data.
+
+        Returns:
+            vtkPolyData: Boundary edges
+        """
+        # Create a geometry filter to convert unstructured grid to polydata
+        geometry_filter = vtk.vtkGeometryFilter()
+        geometry_filter.SetInputData(self.data)
+        geometry_filter.Update()
+
+        # Create a feature edges filter with all types of edges enabled
+        feature_edges = vtk.vtkFeatureEdges()
+        feature_edges.SetInputConnection(geometry_filter.GetOutputPort())
+        feature_edges.BoundaryEdgesOn()
+        feature_edges.FeatureEdgesOn()
+        feature_edges.NonManifoldEdgesOn()
+        feature_edges.ManifoldEdgesOn()
+
+        # Set feature angle for feature edge detection
+        feature_edges.Update()
+
+        return feature_edges.GetOutput()
+    
     def _extract_edgepoints(self) -> typing.Tuple:
         """
         Extract points and point number from the edge of VTK data.
@@ -120,29 +156,8 @@ class VTKDataProcessor:
             Tuple containing edgepoints, number of edgepoints
         """
         
-        # Convert vtkUnstructuredGrid to vtkPolyData
-        geometry_filter = vtk.vtkGeometryFilter()
-        geometry_filter.SetInputData(self.data)
-        geometry_filter.Update()
-        # poly_data = geometry_filter.GetOutput()
-        
-        # connectivity_filter = vtk.vtkConnectivityFilter()
-        # connectivity_filter.SetInputData(poly_data)
-        # connectivity_filter.SetExtractionModeToLargestRegion()
-        # connectivity_filter.Update()
-    
-        # largest_component = connectivity_filter.GetOutput()
-        
-        feature_edges = vtk.vtkFeatureEdges()
-        feature_edges.SetInputConnection(geometry_filter.GetOutputPort())
-        feature_edges.BoundaryEdgesOn()
-        feature_edges.FeatureEdgesOff()
-        feature_edges.ManifoldEdgesOff()
-        feature_edges.NonManifoldEdgesOff()
-        feature_edges.Update()
-        
-        edgepoints = feature_edges.GetOutput().GetPoints()
-        num_edgepoints = feature_edges.GetOutput().GetNumberOfPoints()
+        edgepoints = self.boundary_edges.GetPoints()
+        num_edgepoints = self.boundary_edges.GetNumberOfPoints()
         
         return edgepoints, num_edgepoints
     
@@ -211,6 +226,84 @@ class VTKDataProcessor:
         """
         
         return np.array(self.edgepoints.GetData())
+    
+    def _create_boundary_edges_connectors(self):
+        """
+        Extract edge connectors from the boundary edges.
+
+        Args:
+            boundary_edges_all (vtkPolyData): Boundary edges
+
+        Returns:
+            list: List of edge point IDs
+        """
+        list_edge_point_ids = []
+        for i in range(self.boundary_edges.GetNumberOfCells()):
+            cell = self.boundary_edges.GetCell(i)
+            point_ids = [cell.GetPointId(j) for j in range(cell.GetNumberOfPoints())]
+            list_edge_point_ids.append(point_ids)
+            
+        return list_edge_point_ids
+
+    def _create_grouped_boundary_points_list(self):
+        """
+        Order points along boundaries and return only the boundary with the largest area.
+
+        Args:
+            points (np.ndarray): Array of point coordinates
+            list_edge_point_ids (list): List of edge vertex indices
+
+        Returns:
+            tuple: Tuple containing list of boundary points and the largest boundary points
+        """
+        # Create adjacency list representation
+        adj_list = {}
+        for edge in self.list_edge_point_ids:
+            if edge[0] not in adj_list:
+                adj_list[edge[0]] = []
+            if edge[1] not in adj_list:
+                adj_list[edge[1]] = []
+            adj_list[edge[0]].append(edge[1])
+            adj_list[edge[1]].append(edge[0])
+
+        # Find all separate boundary loops
+        boundaries_id = []
+        unvisited = set(adj_list.keys())
+
+        while unvisited:
+            # Start a new boundary
+            start_point = next(iter(unvisited))
+            current = start_point
+            boundary = []
+            boundary_set = set()
+
+            while True:
+                boundary.append(current)
+                boundary_set.add(current)
+                unvisited.remove(current)
+
+                # Find next unvisited neighbor
+                next_point = None
+                for neighbor in adj_list[current]:
+                    if neighbor not in boundary_set:
+                        next_point = neighbor
+                        break
+
+                if next_point is None or next_point == start_point:
+                    break
+
+                current = next_point
+
+            # Only add boundaries_id with at least 3 points (needed for area calculation)
+            if len(boundary) >= 3:
+                boundaries_id.append(boundary)
+
+        if not boundaries_id:
+            return []
+        
+        boundaries_points_list = [self.edgepoints_array[b] for b in boundaries_id]
+        
+        return boundaries_points_list
     
     def get_data_lims(self) -> typing.Tuple:
         """
@@ -289,16 +382,141 @@ class VTKDataProcessor:
         cell_data_diff = {k: (cell_data1[k] - cell_data2[k]) for k in cell_data1.keys() if k in cell_data2.keys()}
         
         return cell_data_diff
+
+    def calculate_area(self, points):
+        """
+        Calculate the area of a polygon using the shoelace formula.
+
+        Args:
+            points (np.ndarray): Array of point coordinates
+
+        Returns:
+            float: Area of the polygon
+        """
+        # Calculate area using the shoelace formula
+        x = points[:, 0]
+        y = points[:, 1]
+
+        # Roll the coordinates to get pairs for the formula
+        x_next = np.roll(x, -1)
+        y_next = np.roll(y, -1)
+
+        # Shoelace formula
+        area = 0.5 * np.abs(np.sum(x * y_next - x_next * y))
+        return area
     
-    def interp_upon_regular_grid(self, ):
-        return
+    def calculate_largest_boundary(self):
+        """
+        Calculate the area for each boundary and find the largest
+        
+        Returns:
+            tuple: the point list and the index of the boundary
+        """
+        area_list = [self.calculate_area(b_point) for b_point in self.boundary_list]
+
+        max_area = max(area_list)
+        largest_boundary_index = area_list.index(max_area)
+        largest_boundary = self.boundary_list[largest_boundary_index]
+        return largest_boundary, largest_boundary_index
+
+
+    def compute_masks_for_paths(self, X, Y, inside_paths=None, outside_paths=None):
+        """
+        Create masks for points 'inside' and 'outside' given boundary paths using vectorized operations.
+        Handles both single paths and lists of paths.
+
+        Args:
+            X (np.ndarray): X coordinates of the grid
+            Y (np.ndarray): Y coordinates of the grid
+            inside_paths (np.ndarray or list of np.ndarray): Single boundary path or list of paths for inside mask. Default is None.
+            outside_paths (np.ndarray or list of np.ndarray): Single boundary path or list of paths for outside mask. Default is None.
+
+        Returns:
+            dict: Dictionary containing masks for 'inside' and/or 'outside'
+        """
+        points = np.column_stack((X.ravel(), Y.ravel()))
+        masks = {}
+
+        def create_mask_for_paths(paths, inverse=False):
+            # Convert single path to list if necessary
+            paths_list = [paths] if isinstance(paths, np.ndarray) else paths
+            
+            # Initialize mask
+            mask = np.zeros(len(points), dtype=bool)
+            
+            # Process each path separately
+            for path_vertices in paths_list:
+                # Ensure path is closed
+                if not np.array_equal(path_vertices[0], path_vertices[-1]):
+                    path_vertices = np.vstack([path_vertices, path_vertices[0]])
+                
+                # Create path
+                path = Path(path_vertices[:, 0:2])
+                current_mask = path.contains_points(points)
+                
+                # Update mask with OR operation
+                mask = mask | current_mask
+            
+            # Invert if needed (for outside paths)
+            if inverse:
+                mask = ~mask
+                
+            return mask.reshape(X.shape)
+
+        if inside_paths is not None:
+            masks['inside'] = create_mask_for_paths(inside_paths)
+
+        if outside_paths is not None:
+            masks['outside'] = create_mask_for_paths(outside_paths, inverse=True)
+
+        return masks
     
-    
-    # def create_mask_path_N(self, X, Y, N):
-    #     boundary_path = mpltPath.Path(largest_boundary[:,0:2])
-    #     points = np.column_stack((X.ravel(), Y.ravel()))
-    #     mask = boundary_path.contains_points(points).reshape(X.shape)
-    #     return(mask)
+    def compute_interpolation_masked_grid(self, x, y, z, X, Y, mask=None, method='linear'):
+        """
+        Interpolate scattered data onto a grid, optionally using a mask.
+        
+        Args:
+            x (np.ndarray): x coordinates of scattered points
+            y (np.ndarray): y coordinates of scattered points
+            z (np.ndarray): values at scattered points
+            X (np.ndarray): X coordinates grid
+            Y (np.ndarray): Y coordinates grid
+            mask (np.ndarray, optional): Boolean mask (True for valid points). If None, interpolates entire grid
+            method (str): 'linear' or 'nearest'
+            
+        Returns:
+            np.ndarray: Interpolated values on the grid
+        """
+        
+        # Points where we need to interpolate (masked points)
+        points_to_interpolate = np.column_stack((X[mask].ravel(), Y[mask].ravel()))
+        
+        # Original data points
+        points = np.column_stack((x, y))
+        
+        # Choose interpolator
+        if method == 'linear':
+            interpolator = LinearNDInterpolator(points, z)
+        elif method == 'nearest':
+            interpolator = NearestNDInterpolator(points, z)
+        else:
+            print("    \033[31mERROR:\033[0m Valid interpolation methods are 'linear' or 'nearest'")
+            return np.array([])
+        
+        if mask is None:
+            # Interpolate entire grid
+            return interpolator(np.column_stack((X.ravel(), Y.ravel()))).reshape(X.shape)
+        else:
+            # Initialize result array
+            result = np.full(X.shape, np.nan)
+            
+            # Points where we need to interpolate (masked points)
+            points_to_interpolate = np.column_stack((X[mask].ravel(), Y[mask].ravel()))
+            
+            # Interpolate only at masked points
+            result[mask] = interpolator(points_to_interpolate)
+            
+            return result
 
 class VTKPlotter:
     """
