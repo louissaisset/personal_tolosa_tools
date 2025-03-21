@@ -14,13 +14,20 @@ def main():
     
     print("\nSearching for initial yaml, tif and shp files...")
     
-    # Find YAML file
-    yaml_file, yaml_status = editor.file_handler.find_unique_file('yaml')
-    if yaml_status == 1:
-        print("    \033[31mERROR:\033[0m Cannot proceed without a YAML file")
-        return 1
-    yaml_file = yaml_file.resolve()
-    print(f"       \033[32mOK:\033[0m Found YAML file: {yaml_file}")
+    # Get YAML file path from argument or find in current directory
+    if len(sys.argv) > 1:
+        yaml_file = Path(sys.argv[1])
+        if not yaml_file.is_file():
+            print("    \033[31mERROR:\033[0m Cannot proceed without a valid YAML file")
+            return 1
+        print(f"       \033[32mOK:\033[0m Found YAML file: {yaml_file}")
+    else:
+        yaml_file, yaml_status = editor.file_handler.find_unique_file('yaml')
+        if yaml_status == 1:
+            print("    \033[31mERROR:\033[0m Cannot proceed without a YAML file")
+            return 1
+        yaml_file = yaml_file.resolve()
+        print(f"       \033[32mOK:\033[0m Found YAML file: {yaml_file}")
     
     # Find TIF file
     tif_file, tif_status = editor.file_handler.find_unique_file('tif')

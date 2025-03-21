@@ -7,6 +7,7 @@ Provides classes for reading, processing, and plotting VTK data
 
 import os
 import typing
+from copy import deepcopy
 
 import vtk
 import numpy as np
@@ -366,6 +367,27 @@ class VTKDataProcessor:
         
         return tripcolor_triangulation, tricontour_triangulation
     
+    
+    def compute_radiusratio(self):
+        
+        mesh_filter = vtk.vtkMeshQuality()
+        mesh_filter.SetInputData(self.data)
+        mesh_filter.SetTriangleQualityMeasureToAspectRatio()
+        mesh_filter.Update()
+        
+        # Récupérer les résultats
+        quality_array = mesh_filter.GetOutput().GetCellData().GetArray("Quality")
+        
+        # Créer un tableau numpy pour stocker les aires
+        new_data = np.zeros(self.num_cells)
+        
+        # Remplir le tableau avec les aires
+        for i in range(self.num_cells):
+            new_data[i] = quality_array.GetValue(i)
+        
+        # processor.cell_data['radiusratio'] = new_data
+        return new_data
+    
     def compute_cell_data_differences(self, other_processor) -> dict:
         
         # Check if the cell centers are the same in both datasets
@@ -539,8 +561,8 @@ class VTKPlotter:
                  figure_format: str = 'png',
                  figure_labelfontsize: int = 8,
                  figure_tickfontsize: int = 7,
-                 
-                 # timestep: int = 0,
+                 figure_grid_linewidth: float = .5,
+                 figure_axes_color = 'k',
                  
                  pcolor_key: str = 'ssh',
                  pcolor_max: float = None, 
@@ -566,7 +588,11 @@ class VTKPlotter:
                  quiver_positionkey: tuple = (.85, 1.03),
                  quiver_lengthkey: float = 1,
                  quiver_units: str = 'm/s',
-                 quiver_fontsize: int = 8
+                 quiver_fontsize: int = 8,
+                 
+                 rectangle_positions = None,
+                 rectangle_colors = 'k',
+                 rectangle_linewidths = 1
                  ):
         """
         Initialize VTKPlotter.
@@ -582,6 +608,8 @@ class VTKPlotter:
             figure_format (str, optional): Format of the figure. Defaults to 'png'.
             figure_labelfontsize (int, optional): Fontsize of all axis labels outside the axis. Defaults to 8
             figure_tickfontsize (int, optional): Fontsize of all axis labels outside the axis. Defaults to 8
+            figure_grid_linewidth (float, optional): linewidth of the grid lines. Defaults to .5
+            figure_axes_color (float or tuple, optional): Color of the axes ticks and frame. Defaults to 'k'
             
             pcolor_key (str, optional): Key name for the data displayed as pcolor. Defaults to 'ssh'.
             pcolor_max (float, optional): Maximum value for color scaling. Defaults to 1.
@@ -608,6 +636,10 @@ class VTKPlotter:
             quiver_lengthkey (tuple, optional): Length of the quiverkey arrow. Defaults to .85, 1.03)
             quiver_units (str, optional): Quiver data units. Defaults to 'm/s'.
             quiver_fontsize (int, optional): Fontsize of quiverkey. Defaults to 8
+            
+            rectangle_positions (list or tuple, optional): List of optional zoom positions (xmin, xmax, ymin, ymax). Defaults to None
+            rectangle_colors (list or str, optional): List of colors for the rectangles displaying the zoom positions. Defaults to 'k'
+            rectangle_linewidths (list or int, optional): List of linewidths for the rectangles displaying the zoom positions. Defaults to 10
         """
         # timestep (int, optional): Timestep corresponding to the data. Defaults to 4.
         
@@ -622,6 +654,8 @@ class VTKPlotter:
         self.figure_format = figure_format 
         self.figure_labelfontsize = figure_labelfontsize
         self.figure_tickfontsize = figure_tickfontsize
+        self.figure_grid_linewidth = figure_grid_linewidth 
+        self.figure_axes_color = figure_axes_color 
         
         # self.timestep = timestep
         
@@ -651,6 +685,10 @@ class VTKPlotter:
         self.quiver_units = quiver_units
         self.quiver_fontsize = quiver_fontsize
         
+        self.rectangle_positions = rectangle_positions if rectangle_positions is not None else []
+        self.rectangle_colors = rectangle_colors if rectangle_colors is not None else []
+        self.rectangle_linewidths = rectangle_linewidths if rectangle_linewidths is not None else []
+            
         if not os.path.exists(figure_outputdir):
             os.makedirs(figure_outputdir)
             
@@ -665,7 +703,13 @@ class VTKPlotter:
         fig, ax = plt.subplots(1, 1, 
                                figsize=self.figure_size, 
                                dpi=self.figure_dpi)
+        ax.spines['bottom'].set_color(self.figure_axes_color)
+        ax.spines['top'].set_color(self.figure_axes_color)
+        ax.spines['left'].set_color(self.figure_axes_color)
+        ax.spines['right'].set_color(self.figure_axes_color)
+
         ax.set_aspect(1)
+
         return fig, ax
 
     def _setup_colorbar(self, fig: plt.Figure, ax: plt.Axes, mappable) -> None:
@@ -708,6 +752,9 @@ class VTKPlotter:
         
         # Adjust ticks
         ax.tick_params(axis='both', direction='in', 
+                       labelcolor='k',
+                       colors=self.figure_axes_color, 
+                       width = self.figure_grid_linewidth,
                        labelsize = self.figure_tickfontsize)
         ax.set_xticks(ax.get_xticks()[1:-1], 
                       labels=ax.get_xticklabels()[1:-1], 
@@ -721,7 +768,12 @@ class VTKPlotter:
         ax.set_ylabel('Y coordinate', fontsize=self.figure_labelfontsize)
         
         # Add grid
-        ax.grid(linestyle='dashed', zorder=1)
+        if self.figure_grid_linewidth:
+            ax.grid(linestyle='dashed', 
+                    zorder=1,
+                    linewidth = self.figure_grid_linewidth,
+                    color=self.figure_axes_color,
+                    alpha=0.5)
     
     def auto_filename(self):
         key_list = [self.pcolor_key, 
@@ -757,6 +809,61 @@ class VTKPlotter:
         
         # Close the figure
         plt.close(fig)
+        
+    def updated_rectangle_args(self):
+        if self.rectangle_positions is None :   
+            new_rectangle_positions = []
+        elif isinstance(self.rectangle_positions, (list, tuple)) and len(self.rectangle_positions) == 4 and all(isinstance(x, (int, float)) for x in self.rectangle_positions):
+            new_rectangle_positions = [self.rectangle_positions]
+        else:
+            new_rectangle_positions = self.rectangle_positions
+        
+        if self.rectangle_colors is None:
+            new_rectangle_colors = []
+        elif self.rectangle_colors == 'auto':
+            new_rectangle_colors = self.evenly_spaced_colors(len(new_rectangle_positions), 
+                                                             colormap_name='jet')
+        elif not isinstance(self.rectangle_colors, list):
+            new_rectangle_colors = [self.rectangle_colors]
+        else :
+            new_rectangle_colors = self.rectangle_colors 
+        if len(new_rectangle_colors) != len(new_rectangle_positions):
+            new_rectangle_colors = len(new_rectangle_positions)*[new_rectangle_colors[0]]
+            
+        if isinstance(self.rectangle_linewidths, (float, int)):
+            new_rectangle_linewidths = [self.rectangle_linewidths]
+        else :
+            new_rectangle_linewidths = self.rectangle_linewidths
+        if len(new_rectangle_linewidths) != len(new_rectangle_positions):
+            new_rectangle_linewidths = len(new_rectangle_positions)*[new_rectangle_linewidths[0]]
+        
+        return(new_rectangle_positions, new_rectangle_colors, new_rectangle_linewidths)
+    
+    @property
+    def zoomed_plotters(self):
+        
+        new_rectangle_positions, new_rectangle_colors, new_rectangle_linewidths = self.updated_rectangle_args()
+        
+        if new_rectangle_positions:
+            list_plotters = []
+            i = 0
+            for (xmin, xmax, ymin, ymax), c in zip(new_rectangle_positions, new_rectangle_colors):
+                
+                newplotter = deepcopy(self)
+                
+                newplotter.figure_axes_color = c
+                newplotter.figure_xlim = (xmin, xmax)
+                newplotter.figure_ylim = (ymin, ymax)
+                
+                newplotter.rectangle_positions = []
+                newplotter.figure_filename = self.figure_filename + f'_zoom_{i}'
+                
+                list_plotters += [newplotter]
+                i += 1
+            return list_plotters
+        else:
+            return None
+        
     
     def dash_patterns(self) -> typing.List:
         """
@@ -772,6 +879,11 @@ class VTKPlotter:
             on_off_sequence = (i % (N + 2) + 1, i % (N + 2)//2 + 1)  # Vary the lengths of dashes and spaces
             dash_patterns.append((0, on_off_sequence))
         return dash_patterns
+    
+    def evenly_spaced_colors(self, n, colormap_name='viridis') -> typing.List:
+        """Generates n colors evenly spaced inside a named colormap of matplotlib"""
+        cmap = mpl.cm.get_cmap(colormap_name)
+        return [cmap(i / (n - 1)) for i in range(n)]
     
     def plot_quad_data(self, time_step: int, 
                        center_grid_X: np.ndarray, center_grid_Y: np.ndarray, 
@@ -794,6 +906,7 @@ class VTKPlotter:
                                  vmin=self.pcolor_min, 
                                  vmax=self.pcolor_max,
                                  cmap=self.pcolor_cmap, 
+                                 rasterized=True,
                                  zorder=0)
         
         # Plot bathymetry
@@ -824,6 +937,18 @@ class VTKPlotter:
                          f'{self.quiver_lengthkey} {self.quiver_units}', 
                          labelpos='E',
                          fontproperties={'size':self.quiver_fontsize})
+        
+        # Plot the optional zoom positions
+        new_rectangle_positions, new_rectangle_colors, new_rectangle_linewidths = self.updated_rectangle_args()
+        if new_rectangle_positions:
+            for (xmin, xmax, ymin, ymax), c, lw in zip(new_rectangle_positions, new_rectangle_colors, new_rectangle_linewidths):
+                lx = xmax - xmin
+                ly = ymax - ymin
+                rect = mpl.patches.Rectangle((xmin, ymin), lx, ly, 
+                                             edgecolor=c, facecolor=None,
+                                             linewidth=lw,
+                                             zorder=100)
+                ax.add_patch(rect)
         
         
         # Adjust the axes and grid looks
@@ -858,7 +983,8 @@ class VTKPlotter:
                                     cell_data[self.pcolor_key],
                                     vmin=self.pcolor_min, 
                                     vmax=self.pcolor_max,
-                                    cmap=self.pcolor_cmap, 
+                                    cmap=self.pcolor_cmap,  
+                                    rasterized=True,
                                     zorder=0)
         
         # Plot the grid
@@ -898,6 +1024,18 @@ class VTKPlotter:
                          labelpos='E',
                          fontproperties={'size':self.quiver_fontsize})
         
+        # Plot the optional zoom positions
+        new_rectangle_positions, new_rectangle_colors, new_rectangle_linewidths = self.updated_rectangle_args()
+        if new_rectangle_positions:
+            for (xmin, xmax, ymin, ymax), c, lw in zip(new_rectangle_positions, new_rectangle_colors, new_rectangle_linewidths):
+                lx = xmax - xmin
+                ly = ymax - ymin
+                rect = mpl.patches.Rectangle((xmin, ymin), lx, ly, 
+                                             edgecolor=c, facecolor=(1,1,1,0), 
+                                             linewidth=lw,
+                                             zorder=100)
+                ax.add_patch(rect)
+                
         # Adjust the axes and grid looks
         self._adjust_axes(fig, ax)
         
@@ -907,3 +1045,20 @@ class VTKPlotter:
         
         # Ada a title and save
         self._finalize_figure(fig, ax)
+    
+    def Plot(self, processor):
+        
+        print("       \033[32mOK:\033[0m Creating, plotting and saving")
+        # Plot based on cell type
+        if processor.cell_type == 'all_Quad':
+            center_grid_X, center_grid_Y, cell_data_grid = processor.reshape_to_grid()
+            self.plot_quad_data(center_grid_X, 
+                                center_grid_Y, 
+                                cell_data_grid)
+        elif processor.cell_type == 'all_Triangle':
+            tripcolor_tri, tricontour_tri = processor.compute_triangulations()
+            self.plot_triangle_data(tripcolor_tri, 
+                                    tricontour_tri,
+                                    processor.cell_data, 
+                                    processor.cell_centers_array)
+        print("       \033[32mOK:\033[0m Figure created and saved")
