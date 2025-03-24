@@ -31,7 +31,7 @@ if (! `ls *.msh >& /dev/null; echo $status`) then
     if ("$firstmshFile" != "") then
         
         # Récupération du chemin absolu
-        set absolutePathmsh = `realpath "$firstTxtFile"`
+        set absolutePathmsh = `realpath "$firstmshFile"`
         echo "       \e[32mOK:\e[0m Found .msh file: $absolutePathmsh"
         
         # Création du lien symbolique
