@@ -3,32 +3,17 @@
 Script to change a key's value in a configuration file while preserving whitespace.
 Usage: change_key_file.py file.txt key new_value
 """
+import sys, os
+sys.path.append("/local/home/lsaisset/DATA/Scripts/personal_tolosa_tools/")
+import personal_tolosa_tools as ptt
 
-import sys
-import os
 import re
 import shutil
-
-def colorize(text, color_code):
-    """Add color to terminal output"""
-    return f"\033[{color_code}m{text}\033[0m"
-
-def error(message):
-    """Print error message in red"""
-    print(f"    {colorize('ERROR:', '31')} {message}")
-
-def ok(message):
-    """Print ok message in green"""
-    print(f"       {colorize('OK:', '32')} {message}")
-
-def warning(message):
-    """Print warning message in yellow"""
-    print(f"  {colorize('WARNING:', '33')} {message}")
 
 def main():
     # Check argument count
     if len(sys.argv) != 4:
-        error("Wrong number of arguments")
+        ptt.p_error("Wrong number of arguments")
         print(f"Usage: {sys.argv[0]} file.txt key new_value")
         sys.exit(1)
     
@@ -39,10 +24,10 @@ def main():
     
     # Check if file exists
     if not os.path.isfile(file_path):
-        error(f"File '{file_path}' does not exist")
+        ptt.p_error(f"File '{file_path}' does not exist")
         sys.exit(1)
     
-    ok(f"Modifying file: '{file_path}'")
+    ptt.p_ok(f"Modifying file: '{file_path}'")
     
     # Check if key exists in file
     key_found = False
@@ -55,17 +40,17 @@ def main():
                 break
     
     if not key_found:
-        error(f"Key '{key}' not found in '{file_path}'")
+        ptt.p_error(f"Key '{key}' not found in '{file_path}'")
         sys.exit(1)
     
-    ok(f"Found key: {key}")
-    ok(f"Modifying to the new value: {new_value}")
+    ptt.p_ok(f"Found key: {key}")
+    ptt.p_ok(f"Modifying to the new value: {new_value}")
     
     # Display the line from backup
     with open(file_path, 'r') as f:
         for line in f:
             if re.search(re.escape(key), line):
-                ok("Original line:")
+                ptt.p_ok("Original line:")
                 print(line.rstrip())
                 break
     
@@ -92,7 +77,7 @@ def main():
     with open(file_path, 'r') as f:
         for line in f:
             if re.search(re.escape(key), line):
-                ok("New line:")
+                ptt.p_ok("New line:")
                 print(line.rstrip())
                 break
     

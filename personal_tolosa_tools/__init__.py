@@ -1,6 +1,7 @@
 # my_library/__init__.py
 
 # Importer les modules principaux
+from .common import p_colorize, p_error, p_ok, p_warning
 from .vtk_plotter_lib import VTKDataReader, VTKDataProcessor, VTKPlotter
 from .yaml_meshtool import YAMLHandler, FileHandler, YAMLEditor
 
