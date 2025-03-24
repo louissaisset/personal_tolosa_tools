@@ -7,34 +7,28 @@ Created on Fri Jan 31 14:22:52 2025
 """
 
 import sys, os
-sys.path.append("~/DATA/Scripts/personal_tolosa_tools/")
+sys.path.append(os.path.expanduser("~/DATA/Scripts/personal_tolosa_tools/"))
 import personal_tolosa_tools as ptt
 
 from pathlib import Path
-
-import vtk
-import numpy as np
-
-
-
 
 def main():
     print("\nBeginning script for plotting the ith timestep in the VTK results folder...")
     
     # Initialize parameters
     current_path = Path.cwd()
-    print(f"       \033[32mOK:\033[0m Launched from : {current_path}")
+    ptt.p_ok(f"Launched from : {current_path}")
     
     # Initialize classes
     reader = ptt.VTKDataReader(current_path)
     vtk_file = [f for f in reader._get_vtk_files() if f.endswith("_diag.vtk")][0]
-    print(f"       \033[32mOK:\033[0m Asking for file : {vtk_file}")
+    ptt.p_ok(f"Asking for file : {vtk_file}")
     if not vtk_file:
-        print("    \033[31mERROR:\033[0m Cannot proceed without a valid '_diag.vtk' file")
+        ptt.p_error("Cannot proceed without a valid '_diag.vtk' file")
         return 1
     
     output_dir = (current_path / f'Figures_{current_path.name}').resolve()
-    print(f"       \033[32mOK:\033[0m Defined Figure folder : {output_dir}")
+    ptt.p_ok(f"Defined Figure folder : {output_dir}")
     
     
     
@@ -78,7 +72,7 @@ def main():
     
     plotter.figure_filename = 'mesh_complet'
     plotter.triplot = True
-    print("       \033[32mOK:\033[0m Defined the plotter arguments:")
+    ptt.p_ok("Defined the plotter arguments:")
     print(plotter.__dict__)
     
     plotter.Plot(processor)
@@ -86,7 +80,7 @@ def main():
     for newplotter, new_filename, new_figsize in zip(plotter.zoomed_plotters, new_filename_list, new_figsize_list):
         newplotter.figure_filename = new_filename
         newplotter.figure_size = new_figsize
-        print("       \033[32mOK:\033[0m Defined the plotter arguments:")
+        ptt.p_ok("Defined the plotter arguments:")
         print(newplotter.__dict__)
         newplotter.Plot(processor)
         
@@ -100,7 +94,7 @@ def main():
     plotter.pcolor_cmap = 'gist_earth_r'
     plotter.pcolor_min = -25
     plotter.pcolor_max = 50
-    print("       \033[32mOK:\033[0m Defined the plotter arguments:")
+    ptt.p_ok("Defined the plotter arguments:")
     print(plotter.__dict__)
     
     plotter.Plot(processor)
@@ -117,7 +111,7 @@ def main():
     for newplotter, new_filename, new_figsize in zip(plotter.zoomed_plotters, new_filename_list, new_figsize_list):
         newplotter.figure_filename = new_filename
         newplotter.figure_size = new_figsize
-        print("       \033[32mOK:\033[0m Defined the plotter arguments:")
+        ptt.p_ok("Defined the plotter arguments:")
         print(newplotter.__dict__)
         newplotter.Plot(processor)
     
@@ -146,7 +140,7 @@ def main():
     for newplotter, new_filename, new_figsize in zip(plotter.zoomed_plotters, new_filename_list, new_figsize_list):
         newplotter.figure_filename = new_filename
         newplotter.figure_size = new_figsize
-        print("       \033[32mOK:\033[0m Defined the plotter arguments:")
+        ptt.p_ok("Defined the plotter arguments:")
         print(newplotter.__dict__)
         newplotter.Plot(processor)
         
@@ -177,7 +171,7 @@ def main():
     for newplotter, new_filename, new_figsize in zip(plotter.zoomed_plotters, new_filename_list, new_figsize_list):
         newplotter.figure_filename = new_filename
         newplotter.figure_size = new_figsize
-        print("       \033[32mOK:\033[0m Defined the plotter arguments:")
+        ptt.p_ok("Defined the plotter arguments:")
         print(newplotter.__dict__)
         newplotter.Plot(processor)
     

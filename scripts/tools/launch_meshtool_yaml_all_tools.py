@@ -2,14 +2,15 @@
 
 
 import sys, os
-os.environ['PATH'] += os.pathsep + '~/DATA/Scripts/personal_tolosa_tools/scripts/tools/'
-
+os.environ['PATH'] += os.pathsep +  os.path.expanduser('~/DATA/Scripts/personal_tolosa_tools/scripts/tools/')
+sys.path.append(os.path.expanduser("~/DATA/Scripts/personal_tolosa_tools/"))
+from personal_tolosa_tools import p_error
 
 import subprocess
 
 
 def main():
-    
+    print(os.environ['PATH'])
     print("\nBeginning script for launching meshtool 4 times using a single yaml file")
     
     # List of tools to run in sequence
@@ -27,9 +28,9 @@ def main():
         try:
             subprocess.run(command, shell=True, check=True)
         except subprocess.CalledProcessError as e:
-            print(f"    \033[31mERROR:\033[0m Failed to run meshtool: {e}")
+            p_error(f"Failed to run meshtool: {e}")
         except FileNotFoundError:
-            print("    \033[31mERROR:\033[0m launch_meshtool_yaml.sh command not found")
+            p_error("Command not found : launch_meshtool_yaml.sh")
     return 0
 
 if __name__ == "__main__":

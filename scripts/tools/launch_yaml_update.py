@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 
 
-import sys
-sys.path.append("~/DATA/Scripts/personal_tolosa_tools/")
+import sys, os
+sys.path.append(os.path.expanduser("~/DATA/Scripts/personal_tolosa_tools/"))
 import personal_tolosa_tools as ptt
 
 from pathlib import Path
@@ -18,32 +18,32 @@ def main():
     if len(sys.argv) > 1:
         yaml_file = Path(sys.argv[1])
         if not yaml_file.is_file():
-            print("    \033[31mERROR:\033[0m Cannot proceed without a valid YAML file")
+            ptt.p_error("Cannot proceed without a valid YAML file")
             return 1
-        print(f"       \033[32mOK:\033[0m Found YAML file: {yaml_file}")
+        ptt.p_ok(f"Found YAML file: {yaml_file}")
     else:
         yaml_file, yaml_status = editor.file_handler.find_unique_file('yaml')
         if yaml_status == 1:
-            print("    \033[31mERROR:\033[0m Cannot proceed without a YAML file")
+            ptt.p_error("Cannot proceed without a YAML file")
             return 1
         yaml_file = yaml_file.resolve()
-        print(f"       \033[32mOK:\033[0m Found YAML file: {yaml_file}")
+        ptt.p_ok(f"Found YAML file: {yaml_file}")
     
     # Find TIF file
     tif_file, tif_status = editor.file_handler.find_unique_file('tif')
     if tif_status == 1:
-        print("    \033[31mERROR:\033[0m Cannot proceed without a TIF file")
+        ptt.p_error("Cannot proceed without a TIF file")
         return 1
     tif_file = tif_file.resolve()
-    print(f"       \033[32mOK:\033[0m Found TIF file: {tif_file}")
+    ptt.p_ok(f"Found TIF file: {tif_file}")
     
     # Find SHP file
     shp_file, shp_status = editor.file_handler.find_unique_file('shp')
     if shp_status == 1:
-        print("    \033[31mERROR:\033[0m Cannot proceed without a SHP file")
+        ptt.p_error("Cannot proceed without a SHP file")
         return 1
     shp_file = shp_file.resolve()
-    print(f"       \033[32mOK:\033[0m Found SHP file: {shp_file}")
+    ptt.p_ok(f"Found SHP file: {shp_file}")
     
     print("\nDefining path for msh and regional.depth-ele.a files...")
     
@@ -53,11 +53,11 @@ def main():
     
     # Define MSH file
     msh_file = (current_path / f"{shp_name}.msh").resolve()
-    print(f"       \033[32mOK:\033[0m Defined MSH file: {msh_file}")
+    ptt.p_ok(f"Defined MSH file: {msh_file}")
     
     # Define projBathyFile
     proj_bathy_file = (current_path / "regional.depth-ele.a").resolve()
-    print(f"       \033[32mOK:\033[0m Defined regional.depth-ele.a file: {proj_bathy_file}")
+    ptt.p_ok(f"Defined regional.depth-ele.a file: {proj_bathy_file}")
     
     # Process the YAML file
     print(f"\nProcessing {yaml_file}...")
@@ -65,7 +65,7 @@ def main():
     
     yaml_data = editor.load_yaml_file(yaml_file)
     if not yaml_data:
-        print("    \033[31mERROR:\033[0m Cannot proceed without YAML data")
+        ptt.p_error("Cannot proceed without YAML data")
         return 1
     
     # Update fields if they exist in the YAML file
@@ -83,12 +83,12 @@ def main():
             current_path = Path(yaml_data[field]).resolve() if yaml_data[field] else None
             
             if not new_path.exists():
-                print(f"  \033[33mWARNING:\033[0m Specified {field} path doesn't exist, still updating...")
+                ptt.p_warning(f"Specified {field} path doesn't exist, still updating...")
             
             if current_path != new_path:
                 update_status += editor.update_field(yaml_data, field, str(new_path))
             else:
-                print(f"       \033[32mOK:\033[0m {field} paths match, no update needed")
+                ptt.p_ok(f"{field} paths match, no update needed")
     
     
     print(f"\nSaving the updated YAML file...")
@@ -97,7 +97,7 @@ def main():
         if not save_status:
             return 1
     else :
-        print(f"       \033[32mOK:\033[0m No need to change {yaml_file}")
+        ptt.p_ok(f"No need to change {yaml_file}")
     
     return 0
 

@@ -12,7 +12,6 @@ import re
 import shutil
 
 def main():
-    print(sys.path)
     # Check argument count
     if len(sys.argv) != 4:
         p_error("Wrong number of arguments")

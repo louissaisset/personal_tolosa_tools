@@ -1,17 +1,17 @@
 #!/usr/bin/env python3
 
 import sys, os
-sys.path.append("~/DATA/Scripts/personal_tolosa_tools/")
+sys.path.append(os.path.expanduser("~/DATA/Scripts/personal_tolosa_tools/"))
 import personal_tolosa_tools as ptt
 
-os.environ['PATH'] += os.pathsep + '~/DATA/Scripts/personal_tolosa_tools/scripts/tools/'
+os.environ['PATH'] += os.pathsep + os.path.expanduser('~/DATA/Scripts/personal_tolosa_tools/scripts/tools/')
 
 import subprocess
 from pathlib import Path
 import argparse
 
 def main():
-    print("\nBeginning script for launching meshtool using specific yaml file and/or tool argument")
+    print("\nBeginning script for launching meshtool using specific yaml file and/or tool argument...")
     
     editor = ptt.YAMLEditor()
 
@@ -41,54 +41,54 @@ def main():
     if args.tool_kwarg is not None:
         tool = args.tool_kwarg
     
-    print(f"       \033[32mOK:\033[0m Asking for file: {yaml_file}")
-    print(f"       \033[32mOK:\033[0m Asking for tool: {tool}")
+    ptt.p_ok(f"Asking for file: {yaml_file}")
+    ptt.p_ok(f"Asking for tool: {tool}")
     
-    print("Checking the asked files and tools:")
+    print("\nChecking the asked files and tools...")
 
     # Get YAML file path from argument or find in current directory
     if yaml_file:
         yaml_file = Path(sys.argv[1])
         if yaml_file.is_file():
-            print(f"       \033[32mOK:\033[0m Found YAML file: {yaml_file}")
+            ptt.p_ok(f"Found YAML file: {yaml_file}")
         else:
-            print("    \033[31mERROR:\033[0m Cannot proceed without a valid YAML file")
+            ptt.p_error("Cannot proceed without a valid YAML file")
             return 1
     else:
-        print("  \033[33mWARNING:\033[0m No yaml file as argument")
+        ptt.p_warning("No yaml file as argument")
         yaml_file, status = editor.file_handler.find_unique_file('yaml')
         if status == 1:
-            print("    \033[31mERROR:\033[0m Cannot proceed without a YAML file")
+            ptt.p_error("Cannot proceed without a YAML file")
             return 1
         yaml_file = yaml_file.resolve()
-        print(f"       \033[32mOK:\033[0m Found YAML file: {yaml_file}")
+        ptt.p_ok(f"Found YAML file: {yaml_file}")
     
     
     try:
         yaml_data = editor.load_yaml_file(yaml_file)
-        print(f"       \033[32mOK:\033[0m Loaded YAML file: {yaml_file}")
+        ptt.p_ok(f"Loaded YAML file: {yaml_file}")
     except:
-        print("    \033[31mERROR:\033[0m Could not load {yaml_file}")
+        ptt.p_error(f"Could not load {yaml_file}")
 
 
     try:
         current_tool = yaml_data.get('tool', '') 
-        print(f"       \033[32mOK:\033[0m Current tool in yaml file: {current_tool}")
+        ptt.p_ok(f"Current tool in yaml file: {current_tool}")
     except:
-        print("    \033[31mERROR:\033[0m Could not get 'tool' from yaml file")
+        ptt.p_error("Could not get 'tool' from yaml file")
         return 1
 
     if not tool:
         tool = current_tool
-        print(f"       \033[32mOK:\033[0m Kept tool as: {tool}")
+        ptt.p_ok(f"Kept tool as: {tool}")
     elif tool == current_tool:
-        print(f"       \033[32mOK:\033[0m Kept tool as: {tool}")
+        ptt.p_ok(f"Kept tool as: {tool}")
     elif tool in ['create_mesh', 'bathy_smooth', 'regional_grid', 'diagnostic'] and tool!=current_tool:
-        print(f"       \033[32mOK:\033[0m Asking for tool: {tool}")
+        ptt.p_ok(f"Asking for tool: {tool}")
         yaml_data['tool'] = tool
         editor.save_yaml_file(yaml_data, yaml_file)
     else:
-        print("    \033[31mERROR:\033[0m Asked tool is neither of 'create_mesh', 'bathy_smooth', 'regional_grid' or 'diagnostic'")
+        ptt.p_error("Asked tool is neither of 'create_mesh', 'bathy_smooth', 'regional_grid' or 'diagnostic'")
         return 1
 
     # Run meshtool for with the new tool
@@ -96,9 +96,9 @@ def main():
     try:
         subprocess.run(command, shell=True, check=True)
     except subprocess.CalledProcessError as e:
-        print(f"    \033[31mERROR:\033[0m Failed to run meshtool: {e}")
+        ptt.p_error(f"Failed to run meshtool: {e}")
     except FileNotFoundError:
-        print("    \033[31mERROR:\033[0m launch_meshtool_yaml.sh command not found")
+        ptt.p_error("launch_meshtool_yaml.sh command not found")
     return 0
 
 if __name__ == "__main__":

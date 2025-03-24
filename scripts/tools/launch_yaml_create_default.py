@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 
-import sys
-sys.path.append("~/DATA/Scripts/personal_tolosa_tools/")
+import sys, os
+sys.path.append(os.path.expanduser("~/DATA/Scripts/personal_tolosa_tools/"))
 import personal_tolosa_tools as ptt
 
 from pathlib import Path
@@ -16,14 +16,14 @@ def main():
     
     # Create the file
     default_yaml_path.touch()
-    print(f"       \033[32mOK:\033[0m Created the default yaml file: {default_yaml_path}")
+    ptt.p_ok(f"Created the default yaml file: {default_yaml_path}")
     
     # Write content to the file
     editor = ptt.YAMLEditor()
     default_yaml_data = editor.load_default_yaml()
     editor.save_yaml_file(default_yaml_data, default_yaml_path)
     # create_default_yaml(default_yaml_path)
-    print(f"       \033[32mOK:\033[0m Added the contents of the default yaml file to: {default_yaml_path}")
+    ptt.p_ok(f"Added the contents of the default yaml file to: {default_yaml_path}")
     
     return 0
 
