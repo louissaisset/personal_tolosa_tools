@@ -105,13 +105,13 @@ sleep 5
 
 
 
-echo -e "\nBeginning the copy of initialisation files into the original folder..."
+echo "\nBeginning the copy of initialisation files into the original folder..."
 
 # Copier les fichiers résultants et revenir au répertoire initial
 cp $path_cini/rest_* $start_path
-echo -e "       \e[32mOK:\e[0m Copied files to current folder"
+echo "       \e[32mOK:\e[0m Copied files to current folder"
 
 # Décharger tous les modules
 module purge
-echo -e "       \e[32mOK:\e[0m Purged all modules"
+echo "       \e[32mOK:\e[0m Purged all modules"
 
