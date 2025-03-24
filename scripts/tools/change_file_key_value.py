@@ -4,7 +4,7 @@ Script to change a key's value in a configuration file while preserving whitespa
 Usage: change_key_file.py file.txt key new_value
 """
 import sys, os
-sys.path.append("/local/home/lsaisset/DATA/Scripts/personal_tolosa_tools/")
+sys.path.append("~/DATA/Scripts/personal_tolosa_tools/")
 import personal_tolosa_tools as ptt
 
 import re

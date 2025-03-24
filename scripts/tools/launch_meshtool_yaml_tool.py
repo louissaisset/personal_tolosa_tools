@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 
 import sys, os
-sys.path.append("/local/home/lsaisset/DATA/Scripts/personal_tolosa_tools/")
+sys.path.append("~/DATA/Scripts/personal_tolosa_tools/")
 import personal_tolosa_tools as ptt
 
-os.environ['PATH'] += os.pathsep + '/local/home/lsaisset/DATA/Scripts/personal_tolosa_tools/scripts/tools/'
+os.environ['PATH'] += os.pathsep + '~/DATA/Scripts/personal_tolosa_tools/scripts/tools/'
 
 import subprocess
 from pathlib import Path

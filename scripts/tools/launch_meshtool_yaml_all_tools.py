@@ -2,7 +2,7 @@
 
 
 import sys, os
-os.environ['PATH'] += os.pathsep + '/local/home/lsaisset/DATA/Scripts/personal_tolosa_tools/scripts/tools/'
+os.environ['PATH'] += os.pathsep + '~/DATA/Scripts/personal_tolosa_tools/scripts/tools/'
 
 
 import subprocess

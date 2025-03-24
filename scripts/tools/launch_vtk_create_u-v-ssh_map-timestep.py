@@ -7,14 +7,10 @@ Created on Fri Jan 31 14:22:52 2025
 """
 
 import sys, os
-sys.path.append("/local/home/lsaisset/DATA/Scripts/personal_tolosa_tools/")
+sys.path.append("~/DATA/Scripts/personal_tolosa_tools/")
 import personal_tolosa_tools as ptt
 
 from pathlib import Path
-
-# print("    \033[31mERROR:\033[0m 
-# print("       \033[32mOK:\033[0m 
-# print("  \033[33mWARNING:\033[0m 
 
 def main():
     print("\nBeginning script for plotting the ith timestep in the VTK results folder...")

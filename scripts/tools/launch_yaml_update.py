@@ -2,7 +2,7 @@
 
 
 import sys
-sys.path.append("/local/home/lsaisset/DATA/Scripts/personal_tolosa_tools/")
+sys.path.append("~/DATA/Scripts/personal_tolosa_tools/")
 import personal_tolosa_tools as ptt
 
 from pathlib import Path
