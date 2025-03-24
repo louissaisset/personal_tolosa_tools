@@ -75,11 +75,19 @@ echo "\n Beginning the creation of initialisation files..."
 sleep 5
 echo "       \e[32mOK:\e[0m End of cini tool"
 
-# Copier les fichiers résultants et revenir au répertoire initial
-cd $start_path/$f
-cp $path_cini/rest_* .
-cd $start_path
 
+set resfiles = `ls $path_cini/rest_*`
+echo "       \e[32mOK:\e[0m Initialisation files created by cini: $resfiles"
+
+
+# Copier les fichiers résultants et revenir au répertoire initial
+cd $start_path
+echo "       \e[32mOK:\e[0m Moved to $start_path"
+
+cp $path_cini/rest_* .
+echo "       \e[32mOK:\e[0m Copied files to current folder"
 
 # Décharger tous les modules
 module purge
+echo "       \e[32mOK:\e[0m Purged all modules"
+
