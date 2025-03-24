@@ -14,5 +14,6 @@ __version__ = '0.0.1'
 # Définir ce qui est exposé publiquement
 __all__ = [
     'VTKDataReader', 'VTKDataProcessor', 'VTKPlotter',
-    'YAMLHandler', 'FileHandler', 'YAMLEditor'
+    'YAMLHandler', 'FileHandler', 'YAMLEditor',
+    'p_colorize', 'p_error', 'p_warning', 'p_ok' 
 ]
