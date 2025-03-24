@@ -80,20 +80,26 @@ ln -sf ${start_path}/regional.depth-ele.a $path_cini/regional.depth.a
 echo "       \e[32mOK:\e[0m Added regional.depth-ele.a file symbolic link to $path_cini/regional.depth.a"
 
 
+
+echo "\nBeginning the creation of initialisation files..."
+
 # Déplacement vers le dossier contenant l'outil cini
 cd $path_cini
 echo "       \e[32mOK:\e[0m Moved to $path_cini"
 
 # Création des fichiers d'initialisation
-echo "\n Beginning the creation of initialisation files..."
+echo "       \e[32mOK:\e[0m Launched cini using ./inicon"
 ./inicon
-sleep 5
 echo "       \e[32mOK:\e[0m End of cini tool"
-
 
 set resfiles = `ls $path_cini/rest_*`
 echo "       \e[32mOK:\e[0m Initialisation files created by cini: $resfiles"
 
+sleep 5
+
+
+
+echo "\nBeginning the copy of initialisation files into the original folder..."
 
 # Copier les fichiers résultants et revenir au répertoire initial
 cd $start_path
