@@ -4,16 +4,18 @@ Script to change a key's value in a configuration file while preserving whitespa
 Usage: change_key_file.py file.txt key new_value
 """
 import sys, os
-sys.path.append("~/DATA/Scripts/personal_tolosa_tools/")
-import personal_tolosa_tools as ptt
+sys.path.append(os.path.expanduser("~/DATA/Scripts/personal_tolosa_tools/"))
+from personal_tolosa_tools import p_error, p_ok, p_warning
+
 
 import re
 import shutil
 
 def main():
+    print(sys.path)
     # Check argument count
     if len(sys.argv) != 4:
-        ptt.p_error("Wrong number of arguments")
+        p_error("Wrong number of arguments")
         print(f"Usage: {sys.argv[0]} file.txt key new_value")
         sys.exit(1)
     
@@ -24,10 +26,10 @@ def main():
     
     # Check if file exists
     if not os.path.isfile(file_path):
-        ptt.p_error(f"File '{file_path}' does not exist")
+        p_error(f"File '{file_path}' does not exist")
         sys.exit(1)
     
-    ptt.p_ok(f"Modifying file: '{file_path}'")
+    p_ok(f"Modifying file: '{file_path}'")
     
     # Check if key exists in file
     key_found = False
@@ -40,17 +42,17 @@ def main():
                 break
     
     if not key_found:
-        ptt.p_error(f"Key '{key}' not found in '{file_path}'")
+        p_error(f"Key '{key}' not found in '{file_path}'")
         sys.exit(1)
     
-    ptt.p_ok(f"Found key: {key}")
-    ptt.p_ok(f"Modifying to the new value: {new_value}")
+    p_ok(f"Found key: {key}")
+    p_ok(f"Modifying to the new value: {new_value}")
     
     # Display the line from backup
     with open(file_path, 'r') as f:
         for line in f:
             if re.search(re.escape(key), line):
-                ptt.p_ok("Original line:")
+                p_ok("Original line:")
                 print(line.rstrip())
                 break
     
@@ -77,7 +79,7 @@ def main():
     with open(file_path, 'r') as f:
         for line in f:
             if re.search(re.escape(key), line):
-                ptt.p_ok("New line:")
+                p_ok("New line:")
                 print(line.rstrip())
                 break
     
