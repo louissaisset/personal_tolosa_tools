@@ -23,10 +23,10 @@ if ($#argv >= 1) then
         
         # Convert to absolute path
         set absolutePathmsh = `realpath "$1"`
-        echo -e "       \e[32mOK:\e[0m Using provided file: $absolutePathmsh"
+        echo "       \e[32mOK:\e[0m Using provided file: $absolutePathmsh"
         
     else
-        echo -e "    \e[31mERROR:\e[0m Cannot proceed without either no argument or an existing file: "
+        echo "    \e[31mERROR:\e[0m Cannot proceed without either no argument or an existing file: "
         exit 1
     endif
 else
@@ -84,12 +84,12 @@ echo "       \e[32mOK:\e[0m Added regional.depth-ele.a file symbolic link to $pa
 echo "\nBeginning the creation of initialisation files..."
 
 # Déplacement vers le dossier contenant l'outil cini
-cd $path_cini
-echo "       \e[32mOK:\e[0m Moved to $path_cini"
+# cd $path_cini
+# echo "       \e[32mOK:\e[0m Moved to $path_cini"
 
 # Création des fichiers d'initialisation
 echo "       \e[32mOK:\e[0m Launched cini using ./inicon"
-./inicon
+$path_cini/inicon
 echo "       \e[32mOK:\e[0m End of cini tool"
 
 set resfiles = `ls $path_cini/rest_*`
@@ -102,10 +102,10 @@ sleep 5
 echo "\nBeginning the copy of initialisation files into the original folder..."
 
 # Copier les fichiers résultants et revenir au répertoire initial
-cd $start_path
-echo "       \e[32mOK:\e[0m Moved to $start_path"
+# cd $start_path
+# echo "       \e[32mOK:\e[0m Moved to $start_path"
 
-cp $path_cini/rest_* .
+cp $path_cini/rest_* $start_path
 echo "       \e[32mOK:\e[0m Copied files to current folder"
 
 # Décharger tous les modules
