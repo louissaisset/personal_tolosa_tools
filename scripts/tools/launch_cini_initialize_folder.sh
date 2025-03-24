@@ -56,7 +56,7 @@ if (! `ls regional.depth-ele.a >& /dev/null; echo $status`) then
     echo "       \e[32mOK:\e[0m Found regional.depth-ele.a: $absolutePathregional"
     
     # Création du lien symbolique
-    ln -sf ${start_path}/$f/regional.depth-ele.a $path_cini/regional.depth.a
+    ln -sf ${start_path}/regional.depth-ele.a $path_cini/regional.depth.a
     echo "       \e[32mOK:\e[0m Added regional.depth-ele.a file symbolic link to $path_cini/input.msh"
 
 else
