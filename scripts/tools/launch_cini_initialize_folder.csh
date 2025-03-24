@@ -1,19 +1,19 @@
-#!/bin/sh
+#!/bin/csh
 
 echo "\nBeginning the initialisation using 'cini'..."
 
 # Définir le chemin vers le répertoire cini
-set path_cini = ~/SOFTS/config_prep_tools/cini
-echo -e "       \e[32mOK:\e[0m Assumed path to cini: $path_cini"
+set path_cini = '~/SOFTS/config_prep_tools/cini'
+echo "       \e[32mOK:\e[0m Assumed path to cini: $path_cini"
 
 # Charger le module nécessaire
 source /usr/share/Modules/3.2.10/init/csh
 module load intel-fc-20/19.1.3
-echo -e "       \e[32mOK:\e[0m Loaded modules: intel-fc-20/19.1.3"
+echo "       \e[32mOK:\e[0m Loaded modules: intel-fc-20/19.1.3"
 
 # Sauvegarder le chemin de départ
 set start_path = $cwd
-echo -e "       \e[32mOK:\e[0m Selected folder: $start_path"
+echo "       \e[32mOK:\e[0m Selected folder: $start_path"
 
 
 # Check if an argument was provided
@@ -23,11 +23,11 @@ if ($#argv >= 1) then
         
         # Convert to absolute path
         set absolutePathmsh = `realpath "$1"`
-        echo -e "       \e[32mOK:\e[0m Using provided file: $absolutePathmsh"
+        echo "       \e[32mOK:\e[0m Using provided file: $absolutePathmsh"
         
     else
-        echo -e "    \e[31mERROR:\e[0m File does not exist : $1"
-        echo -e "    \e[31mERROR:\e[0m Cannot proceed without either no argument or an existing .msh file"
+        echo "    \e[31mERROR:\e[0m File does not exist : $1"
+        echo "    \e[31mERROR:\e[0m Cannot proceed without either no argument or an existing .msh file"
         exit 1
     endif
 else
@@ -37,7 +37,7 @@ else
         # Ajout d'un warning si de multiples fichiers .msh existent dans le dossier
         set txtCount = `find . -maxdepth 1 -name "*.msh" -type f | wc -l`
         if ($txtCount > 1) then
-            echo -e "  \e[33mWARNING:\e[0m Multiple .msh files found"
+            echo "  \e[33mWARNING:\e[0m Multiple .msh files found"
         endif
         
         # Utilisation de find pour récupérer seulement le premier fichier .msh
@@ -48,16 +48,16 @@ else
             
             # Récupération du chemin absolu
             set absolutePathmsh = `realpath "$firstmshFile"`
-            echo -e "       \e[32mOK:\e[0m Found .msh file: $absolutePathmsh"
+            echo "       \e[32mOK:\e[0m Found .msh file: $absolutePathmsh"
     
         else
-            echo -e "    \e[31mERROR:\e[0m No .msh files found in the current directory."
-            echo -e "    \e[31mERROR:\e[0m Cannot proceed without either no argument or an existing .msh file"
+            echo "    \e[31mERROR:\e[0m No .msh files found in the current directory."
+            echo "    \e[31mERROR:\e[0m Cannot proceed without either no argument or an existing .msh file"
             exit 1
         endif
     else
-        echo -e "    \e[31mERROR:\e[0m No .msh files found in the current directory."
-        echo -e "    \e[31mERROR:\e[0m Cannot proceed without either no argument or an existing .msh file"
+        echo "    \e[31mERROR:\e[0m No .msh files found in the current directory."
+        echo "    \e[31mERROR:\e[0m Cannot proceed without either no argument or an existing .msh file"
         exit 1
     endif
 endif
@@ -69,18 +69,18 @@ if (! `ls regional.depth-ele.a >& /dev/null; echo $status`) then
 
     # Récupération du chemin absolu
     set absolutePathregional = `realpath ./regional.depth-ele.a`
-    echo -e "       \e[32mOK:\e[0m Found regional.depth-ele.a: $absolutePathregional"
+    echo "       \e[32mOK:\e[0m Found regional.depth-ele.a: $absolutePathregional"
 
 else
-    echo -e "    \e[31mERROR:\e[0m No regional.depth-ele.a files found in the current directory."
+    echo "    \e[31mERROR:\e[0m No regional.depth-ele.a files found in the current directory."
     exit 1
 endif
 
 # Création des liens symboliques
 ln -sf $absolutePathmsh $path_cini/input.msh
-echo -e "       \e[32mOK:\e[0m Added .msh file symbolic link to $path_cini/input.msh "
+echo "       \e[32mOK:\e[0m Added .msh file symbolic link to $path_cini/input.msh "
 ln -sf ${start_path}/regional.depth-ele.a $path_cini/regional.depth.a
-echo -e "       \e[32mOK:\e[0m Added regional.depth-ele.a file symbolic link to $path_cini/regional.depth.a"
+echo "       \e[32mOK:\e[0m Added regional.depth-ele.a file symbolic link to $path_cini/regional.depth.a"
 
 
 
@@ -88,18 +88,18 @@ echo "\nBeginning the creation of initialisation files..."
 
 # Déplacement vers le dossier contenant l'outil cini
 cd $path_cini
-echo -e "       \e[32mOK:\e[0m Moved to $path_cini"
+echo "       \e[32mOK:\e[0m Moved to $path_cini"
 
 # Création des fichiers d'initialisation
-echo -e "       \e[32mOK:\e[0m Launched cini using ./inicon"
+echo "       \e[32mOK:\e[0m Launched cini using ./inicon"
 ./inicon
-echo -e "       \e[32mOK:\e[0m End of cini tool"
+echo "       \e[32mOK:\e[0m End of cini tool"
 
 cd $start_path
-echo -e "       \e[32mOK:\e[0m Moved back to $start_path"
+echo "       \e[32mOK:\e[0m Moved back to $start_path"
 
 set resfiles = `ls $path_cini/rest_*`
-echo -e "       \e[32mOK:\e[0m Initialisation files created by cini: $resfiles"
+echo "       \e[32mOK:\e[0m Initialisation files created by cini: $resfiles"
 
 sleep 5
 
