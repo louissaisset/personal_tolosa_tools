@@ -26,7 +26,8 @@ if ($#argv >= 1) then
         echo "       \e[32mOK:\e[0m Using provided file: $absolutePathmsh"
         
     else
-        echo "    \e[31mERROR:\e[0m Cannot proceed without either no argument or an existing file: "
+        echo "    \e[31mERROR:\e[0m File does not exist : $1"
+        echo "    \e[31mERROR:\e[0m Cannot proceed without either no argument or an existing .msh file"
         exit 1
     endif
 else
@@ -51,10 +52,12 @@ else
     
         else
             echo "    \e[31mERROR:\e[0m No .msh files found in the current directory."
+            echo "    \e[31mERROR:\e[0m Cannot proceed without either no argument or an existing .msh file"
             exit 1
         endif
     else
         echo "    \e[31mERROR:\e[0m No .msh files found in the current directory."
+        echo "    \e[31mERROR:\e[0m Cannot proceed without either no argument or an existing .msh file"
         exit 1
     endif
 endif
@@ -84,13 +87,16 @@ echo "       \e[32mOK:\e[0m Added regional.depth-ele.a file symbolic link to $pa
 echo "\nBeginning the creation of initialisation files..."
 
 # Déplacement vers le dossier contenant l'outil cini
-# cd $path_cini
-# echo "       \e[32mOK:\e[0m Moved to $path_cini"
+cd $path_cini
+echo "       \e[32mOK:\e[0m Moved to $path_cini"
 
 # Création des fichiers d'initialisation
 echo "       \e[32mOK:\e[0m Launched cini using ./inicon"
-$path_cini/inicon
+./inicon
 echo "       \e[32mOK:\e[0m End of cini tool"
+
+cd $start_path
+echo "       \e[32mOK:\e[0m Moved back to $start_path"
 
 set resfiles = `ls $path_cini/rest_*`
 echo "       \e[32mOK:\e[0m Initialisation files created by cini: $resfiles"
@@ -102,9 +108,6 @@ sleep 5
 echo "\nBeginning the copy of initialisation files into the original folder..."
 
 # Copier les fichiers résultants et revenir au répertoire initial
-# cd $start_path
-# echo "       \e[32mOK:\e[0m Moved to $start_path"
-
 cp $path_cini/rest_* $start_path
 echo "       \e[32mOK:\e[0m Copied files to current folder"
 
