@@ -15,37 +15,50 @@ echo "       \e[32mOK:\e[0m Loaded modules: intel-fc-20/19.1.3"
 set start_path = $cwd
 echo "       \e[32mOK:\e[0m Selected folder: $start_path"
 
-# Vérifier l'existence d'un fichier .msh dans le dossier
-if (! `ls *.msh >& /dev/null; echo $status`) then
 
-    # Ajout d'un warning Si de multiples fichiers .msh existent dans le dossier
-    set txtCount = `find . -maxdepth 1 -name "*.msh" -type f | wc -l`
-    if ($txtCount > 1) then
-        echo "  \e[33mWARNING:\e[0m Multiple .msh files found"
+# Check if an argument was provided
+if ($#argv >= 1) then
+    # Argument was provided, check if it exists and is a file
+    if (-f "$1") then
+        
+        # Convert to absolute path
+        set absolutePathmsh = `realpath "$1"`
+        echo -e "       \e[32mOK:\e[0m Using provided file: $absolutePathmsh"
+        
+    else
+        echo -e "    \e[31mERROR:\e[0m Cannot proceed without either no argument or an existing file: "
+        exit 1
     endif
+else
+    # Vérifier l'existence d'un fichier .msh dans le dossier
+    if (! `ls *.msh >& /dev/null; echo $status`) then
     
-    # Utilisation de find pour récupérer seulement le premier fichier .msh
-    set firstmshFile = `find . -maxdepth 1 -name "*.msh" -type f | sort | head -1`
+        # Ajout d'un warning si de multiples fichiers .msh existent dans le dossier
+        set txtCount = `find . -maxdepth 1 -name "*.msh" -type f | wc -l`
+        if ($txtCount > 1) then
+            echo "  \e[33mWARNING:\e[0m Multiple .msh files found"
+        endif
+        
+        # Utilisation de find pour récupérer seulement le premier fichier .msh
+        set firstmshFile = `find . -maxdepth 1 -name "*.msh" -type f | sort | head -1`
+        
+        # Si il y a au moins un fichier .msh
+        if ("$firstmshFile" != "") then
+            
+            # Récupération du chemin absolu
+            set absolutePathmsh = `realpath "$firstmshFile"`
+            echo "       \e[32mOK:\e[0m Found .msh file: $absolutePathmsh"
     
-    # Si il y a au moins un fichier .msh
-    if ("$firstmshFile" != "") then
-        
-        # Récupération du chemin absolu
-        set absolutePathmsh = `realpath "$firstmshFile"`
-        echo "       \e[32mOK:\e[0m Found .msh file: $absolutePathmsh"
-        
-        # Création du lien symbolique
-        ln -sf $absolutePathmsh $path_cini/input.msh
-        echo "       \e[32mOK:\e[0m Added .msh file symbolic link to $path_cini/input.msh "
-
+        else
+            echo "    \e[31mERROR:\e[0m No .msh files found in the current directory."
+            exit 1
+        endif
     else
         echo "    \e[31mERROR:\e[0m No .msh files found in the current directory."
         exit 1
     endif
-else
-    echo "    \e[31mERROR:\e[0m No .msh files found in the current directory."
-    exit 1
 endif
+
 
 
 # Vérifier l'existence d'un fichier regional.depth-ele.a dans le dossier
@@ -54,15 +67,17 @@ if (! `ls regional.depth-ele.a >& /dev/null; echo $status`) then
     # Récupération du chemin absolu
     set absolutePathregional = `realpath ./regional.depth-ele.a`
     echo "       \e[32mOK:\e[0m Found regional.depth-ele.a: $absolutePathregional"
-    
-    # Création du lien symbolique
-    ln -sf ${start_path}/regional.depth-ele.a $path_cini/regional.depth.a
-    echo "       \e[32mOK:\e[0m Added regional.depth-ele.a file symbolic link to $path_cini/input.msh"
 
 else
     echo "    \e[31mERROR:\e[0m No regional.depth-ele.a files found in the current directory."
     exit 1
 endif
+
+# Création des liens symboliques
+ln -sf $absolutePathmsh $path_cini/input.msh
+echo "       \e[32mOK:\e[0m Added .msh file symbolic link to $path_cini/input.msh "
+ln -sf ${start_path}/regional.depth-ele.a $path_cini/regional.depth.a
+echo "       \e[32mOK:\e[0m Added regional.depth-ele.a file symbolic link to $path_cini/regional.depth.a"
 
 
 # Déplacement vers le dossier contenant l'outil cini
