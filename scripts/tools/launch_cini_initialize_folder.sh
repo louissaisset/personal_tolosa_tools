@@ -1,6 +1,6 @@
 #!/bin/csh
 
-echo "Beginning the initialisation using 'cini'..."
+echo "\nBeginning the initialisation using 'cini'..."
 
 # Définir le chemin vers le répertoire cini
 set path_cini = ~/SOFTS/config_prep_tools/cini
@@ -57,17 +57,23 @@ if (! `ls regional.depth-ele.a >& /dev/null; echo $status`) then
     
     # Création du lien symbolique
     ln -sf ${start_path}/$f/regional.depth-ele.a $path_cini/regional.depth.a
-    echo "       \e[32mOK:\e[0m Added regional.depth-ele.a file symbolic link to $path_cini/input.msh "
+    echo "       \e[32mOK:\e[0m Added regional.depth-ele.a file symbolic link to $path_cini/input.msh"
 
 else
     echo "    \e[31mERROR:\e[0m No regional.depth-ele.a files found in the current directory."
     exit 1
 endif
 
-# Exécuter la commande inicon dans le répertoire cini
+
+# Déplacement vers le dossier contenant l'outil cini
 cd $path_cini
+echo "       \e[32mOK:\e[0m Moved to $path_cini"
+
+# Création des fichiers d'initialisation
+echo "\n Beginning the creation of initialisation files..."
 ./inicon
 sleep 5
+echo "       \e[32mOK:\e[0m End of cini tool"
 
 # Copier les fichiers résultants et revenir au répertoire initial
 cd $start_path/$f
