@@ -7,7 +7,7 @@ Created on Fri Jan 31 14:22:52 2025
 """
 
 import sys, os
-if os.uname[1].startswith('belenos'):
+if os.uname()[1].startswith('belenos'):
     path_tolosa_path = "~/SAVE/DATA/Scripts/personal_tolosa_tools/"
 else:
     path_tolosa_path = "~/DATA/Scripts/personal_tolosa_tools/"
