@@ -38,7 +38,7 @@ def main():
     
     # Check if key exists in file
     key_found = False
-    pattern = re.compile(r'\s*' + re.escape(key) + r'\s*')
+    pattern = re.compile(r'\s*' + re.escape(key) + r'\s*=')
     
     with open(file_path, 'r') as f:
         for line in f:
