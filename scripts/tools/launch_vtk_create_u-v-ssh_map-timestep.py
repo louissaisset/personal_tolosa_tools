@@ -11,6 +11,24 @@ sys.path.append(os.path.expanduser("~/DATA/Scripts/personal_tolosa_tools/"))
 import personal_tolosa_tools as ptt
 
 from pathlib import Path
+import argparse
+
+from copy import deepcopy
+import matplotlib as mpl
+mpl.use('agg')
+
+import dask
+from dask.distributed import LocalCluster, Client
+
+@dask.delayed
+def plot_data_plotter(reader, plotter, t):
+
+    vtk_data = reader.read_file(t) 
+    processor = ptt.VTKDataProcessor(vtk_data)
+    # ptt.p_ok("Defined the plotter arguments:")
+    # print(plotter.__dict__)
+    plotter.Plot(processor)
+    ptt.p_ok("Figure created and saved")
 
 def main():
     print("\nBeginning script for plotting the ith timestep in the VTK results folder...")
@@ -19,73 +37,132 @@ def main():
     current_path = Path.cwd()
     ptt.p_ok(f"Launched from : {current_path}")
     
-    if len(sys.argv) > 1:
-        try:
-            timestep = int(sys.argv[1])
-            ptt.p_ok(f"Asking for timestep : {timestep}")
-        except ValueError:
-            ptt.p_error("Cannot proceed without a valid timestep")
-    else:
-        ptt.p_error("Cannot proceed without a valid timestep")
+    # Initialize with default values
+    timestep = ''
+    folder = current_path
     
-    vtk_file = (current_path / "res" / "vtk" / f"result_{timestep:06d}.vtk").resolve()
-    vtk_folder = vtk_file.parent
-    ptt.p_ok(f"Asking for file : {vtk_file}")
-    if vtk_file.is_file():
-        ptt.p_ok(f"Found VTK file: {vtk_file}")
-    else:
-        ptt.p_error("Cannot proceed without a valid VTK file")
-        return 1
+    # Read args and kwargs
+    parser = argparse.ArgumentParser(description='Process VTK folder and timestep parameters')
+    parser.add_argument('args', nargs='*', help='Positional arguments: folder, timestep')
+    parser.add_argument('--folder', dest='folder', default=None, help='Folder parameter as kwarg')
+    parser.add_argument('--timestep', dest='timestep', default=None, help='Timestep parameter as kwarg')
     
-    output_dir = (current_path / 'Figures').resolve()
+    args = parser.parse_args()
+    
+    # Process positional args if provided
+    if len(args.args) >= 1:
+        folder = args.args[0]
+    if len(args.args) >= 2:
+        timestep = args.args[1]
+    
+    # Override with kwargs if provided
+    if args.timestep is not None:
+        timestep = args.timestep
+    if args.folder is not None:
+        folder = args.folder
+    
+    folder = (current_path / Path(folder)).resolve()
+    
+    ptt.p_ok(f"Asking for files from folder: {folder}")
+    ptt.p_ok(f"Asking for timestep: {timestep}")
+    try:
+        timestep_eval = eval(timestep)
+    except:
+        ptt.p_error("Unrecognised timestep format for eval.")
+        sys.exit(1)
+    
+    
+    # Create 'Figures' folder 
+    output_dir = (current_path / f'Figures_{current_path.name}').resolve()
     ptt.p_ok(f"Defined Figure folder : {output_dir}")
+
     
-    print("\nBeginning the plotting...")
+    print("\nInitializing the data Reader and Plotter")
+    
     # Initialize classes
-    reader = ptt.VTKDataReader(vtk_folder)
-    
-    # Read data
-    vtk_data = reader.read_file(timestep)
-    
-    # Processdata
-    processor = ptt.VTKDataProcessor(vtk_data)
+    reader = ptt.VTKDataReader(str(folder))
     
     # Configure the data plots
     plotter = ptt.VTKPlotter(output_dir)
-    plotter.figure_title = f"Timestep = {timestep:05d}"
-    plotter.figure_filename = plotter.auto_filename()+f"_{timestep:05d}"
     plotter.figsize = (3,3)
     plotter.figure_tickfontsize = 5
-    plotter.contour_fontsize = 5
-    plotter.contour_levels = 3
+    plotter.pcolor_max = 1
+    plotter.pcolor_min = -plotter.pcolor_max
+    plotter.contour_key = ''
+    # plotter.contour_fontsize = 4
+    # plotter.contour_levels = 5
     plotter.quiver_lengthkey = 1
-    plotter.quiver_spacing = 20
-    plotter.quiver_scale = 15
     plotter.contour_linewidths = 0.2
+    plotter.rectangle_positions = [(-10000, -3000, -4000, 1000), 
+                                   (-7000, -2000, 4500, 8500), 
+                                   (-17000, -12000, -10000, -5000), 
+                                   (-1000, 4000, -2000, 2000)]
+    plotter.rectangle_colors = 'k'
+    new_figsize_list = [(5,5),
+                        (4,4),
+                        (4,4),
+                        (4,4)]
+    new_filename_list = ['zoom_ilelongue',
+                         'zoom_port',
+                         'zoom_pointepenhir',
+                         'zoom_bassinest']
     
-    # plotter.figure_xlim = (-100000, -90000)
-    # plotter.figure_ylim = (-780000, -775000)
-    # plotter.pcolor_max = 0.1
-    # plotter.pcolor_min = -plotter.pcolor_max
+    # Keep the original file name in memory
+    old_filename = plotter.auto_filename()
     
-    ptt.p_ok("Defined the plotter arguments:")
-    print(plotter.__dict__)
+    # Creating the local cluster and client 
+    cluster = LocalCluster(n_workers=8, threads_per_worker=1)
+    client = Client(cluster)
+    ptt.p_ok(f"See client dashboard via dask at: {client.dashboard_link}")
+    cluster.scale(16)
     
-    
-    ptt.p_ok("Creating, plotting and saving")
-    # Plot based on cell type
-    if processor.cell_type == 'all_Quad':
-        center_grid_X, center_grid_Y, cell_data_grid = processor.reshape_to_grid()
-        plotter.plot_quad_data(center_grid_X, 
-                               center_grid_Y, 
-                               cell_data_grid)
-    elif processor.cell_type == 'all_Triangle':
-        tripcolor_tri, tricontour_tri = processor.compute_triangulations()
-        plotter.plot_triangle_data(tripcolor_tri, 
-                                   tricontour_tri,
-                                   processor.cell_data, 
-                                   processor.cell_centers_array)
-    ptt.p_ok("Figure created and saved")
+    # Create the delayed task list
+    delayed_plot = []
+    if timestep_eval.__class__ == int:
+        # Create the delayed complete figure
+        plotter.figure_title = f"Timestep = {timestep_eval:05d}"
+        plotter.figure_filename = '_'.join([old_filename, 'complet', f"{timestep_eval:05d}"])
+        plotter.quiver_spacing = 170
+        plotter.quiver_scale = 30
+        delayed_plot += [plot_data_plotter(deepcopy(reader), 
+                                           deepcopy(plotter),
+                                           timestep_eval)]
+        
+        # Iterate over the zoom zones and delay the corresponding figure plotting
+        for newplotter, new_filename, new_figsize in zip(plotter.zoomed_plotters, new_filename_list, new_figsize_list):
+            newplotter.figure_filename = '_'.join([old_filename, f'{new_filename}', f"{timestep_eval:05d}"])
+            newplotter.figure_size = new_figsize
+            newplotter.quiver_spacing = 20
+            newplotter.quiver_scale = 15
+            delayed_plot += [plot_data_plotter(deepcopy(reader), 
+                                               deepcopy(newplotter),
+                                               timestep_eval)]
+    else:
+        try:
+            for t in timestep_eval:
+                # Create the delayed complete figure
+                plotter.figure_title = f"Timestep = {t:05d}"
+                plotter.figure_filename = '_'.join([old_filename, 'complet', f"{t:05d}"])
+                plotter.quiver_spacing = 170
+                plotter.quiver_scale = 30
+                delayed_plot += [plot_data_plotter(deepcopy(reader), 
+                                                   deepcopy(plotter),
+                                                   t)]
+                # Iterate over the zoom zones and delay the corresponding figure plotting
+                for newplotter, new_filename, new_figsize in zip(plotter.zoomed_plotters, new_filename_list, new_figsize_list):
+                    newplotter.figure_filename = '_'.join([old_filename, f'{new_filename}', f"{t:05d}"])
+                    newplotter.figure_size = new_figsize
+                    newplotter.quiver_spacing = 20
+                    newplotter.quiver_scale = 15
+                    delayed_plot += [plot_data_plotter(deepcopy(reader), 
+                                                       deepcopy(newplotter), 
+                                                       t)]
+        except:
+            ptt.p_error("Unrecognised timestep format. Should be either int or iterable")
+            sys.exit(1)
+            
+    # Ask for the computing and saving of such figures
+    dask.compute(*delayed_plot)
     
 if __name__ == "__main__":
     exit(main())

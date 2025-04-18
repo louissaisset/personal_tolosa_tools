@@ -7,89 +7,292 @@ Created on Fri Feb 21 13:56:34 2025
 """
 
 
-import sys
-sys.path.append("/local/home/lsaisset/DATA/Scripts/personal_tolosa_tools/")
+import sys, os
+sys.path.append(os.path.expanduser("~/DATA/Scripts/personal_tolosa_tools/"))
 import personal_tolosa_tools as ptt
 
-import numpy as np
 from pathlib import Path
-import copy
-import matplotlib.pyplot as plt
+import argparse
 
-# Define paths to the VTK folders and output folder
-# folder_path = Path("/local/home/lsaisset/DATA/tests_persos/Comparaison/version_datarmor/res/vtk/")
-folder_path = Path("/local/home/lsaisset/DATA/Configs_Brest/Tests_versions_meshtool/BC_0_constraint_all_algo_6_smoothing_00050m")
+from copy import deepcopy
+import matplotlib as mpl
+mpl.use('agg')
 
+import numpy as np
 
-timestep = 0
-reader = ptt.VTKDataReader(folder_path)
-data = reader.read_file(timestep)
-processor = ptt.VTKDataProcessor(data)
-
+import time
+import dask
+from dask.distributed import LocalCluster, Client
 
 
-xmin, xmax, ymin, ymax = processor.get_data_lims()
+@dask.delayed
+def plot_quad_data_plotter(plotter, X, Y, data_key, cell_data):
+    data = {data_key: cell_data}
+    plotter.plot_quad_data(X, Y, data)
+    ptt.p_ok("Figure created and saved")
 
-xmin, xmax, ymin, ymax = -18000, -12000, -8000, -4000
-xreso = 100
-yreso = 50
+@dask.delayed
+def interp_data(reader, t, X, Y, data_key):
+    
+    vtk_data = reader.read_file(t) 
+    processor = ptt.VTKDataProcessor(vtk_data)
+    interpolated_value = processor.compute_interpolation_masked_grid(processor.cell_centers_array[:,0], 
+                                                                     processor.cell_centers_array[:,1],
+                                                                     processor.cell_data[data_key],
+                                                                     X, Y, method='nearest')
+    ptt.p_ok("Interpolation done")
+    return(interpolated_value)
 
-x = np.arange(xmin, xmax, xreso)
-y = np.arange(ymin, ymax, yreso)
-
-X, Y = np.meshgrid(x, y)
-
-largest_boundary, index_largest_boundary = processor.calculate_largest_boundary()
-other_boundaries = copy.deepcopy(processor.boundary_list)
-other_boundaries.pop(index_largest_boundary)
-
-mask = processor.compute_masks_for_paths(X, Y, 
-                                         inside_paths=largest_boundary,
-                                         outside_paths=other_boundaries)
-complete_mask = mask['inside'] & mask['outside']
-
-
-# data_key = 'ssh'
-data_key = 'bathy'
-interpolated_value = processor.compute_interpolation_masked_grid(processor.cell_centers_array[:,0], 
-                                                                 processor.cell_centers_array[:,1],
-                                                                 processor.cell_data[data_key],
-                                                                 X, Y,
-                                                                 mask=complete_mask,
-                                                                 method='linear'
-                                                                 )
-
-tripcolor_tri, _ = processor.compute_triangulations()
-
-
-
-
-
-fig, ax = plt.subplots(1, 1, dpi=300)
-# ax.set_xlim(-10000, -5000)
-# ax.set_ylim(-5000, 0)
-# ax.set_xlim(-18000, -12000)
-# ax.set_ylim(-8000, -4000)
-ax.set_aspect(1)
-plt.tripcolor(tripcolor_tri, processor.cell_data[data_key])
-
-# ax.plot(processor.edgepoints_array[:,0],
-#          processor.edgepoints_array[:,1],
-#          '+r')
-
-ax.plot(largest_boundary[:,0], 
-         largest_boundary[:,1], '-b')
-
-# ax.pcolormesh(X, Y, interpolated_value)
-
-
-# plt.triplot(tripcolor_tri)
-
-ax.grid()
-plt.show()
-
-
-
-
+def main():
+    print("\nBeginning script for comparing the results of 2 simulations on a same regular grid...")
+    
+    # Initialize parameters
+    current_path = Path.cwd()
+    ptt.p_ok(f"Launched from : {current_path}")
+    
+    # Initialize with default values
+    timestep = ''
+    folder1 = current_path
+    folder2 = current_path
+    xreso = 10
+    yreso = 10
+    data_key = 'bathy'
+    
+    # Read args and kwargs
+    parser = argparse.ArgumentParser(description='Process VTK folder and timestep parameters')
+    parser.add_argument('args', nargs='*', help='Positional arguments: folder1, folder2, datatype, xreso, yreso, timestep')
+    parser.add_argument('--folder1', dest='folder1', default=None, help='Folder parameter as kwarg')
+    parser.add_argument('--folder2', dest='folder2', default=None, help='Folder parameter as kwarg')
+    parser.add_argument('--data_key', dest='data_key', default=None, help='Type of data to compare as kwarg')
+    parser.add_argument('--xreso', dest='xreso', default=None, help='X resolution of the comparison grid as kwarg')
+    parser.add_argument('--yreso', dest='yreso', default=None, help='Y resolution of the comparison grid as kwarg')
+    parser.add_argument('--timestep', dest='timestep', default=None, help='Timestep parameter as kwarg')
+    args = parser.parse_args()
+    
+    # Process positional args if provided
+    if len(args.args) >= 1:
+        folder1 = args.args[0]
+    if len(args.args) >= 2:
+        folder2 = args.args[1]
+    if len(args.args) >= 3:
+        data_key = args.args[2]
+    if len(args.args) >= 4:
+        xreso = args.args[3]
+    if len(args.args) >= 5:
+        yreso = args.args[4]
+    if len(args.args) >= 6:
+        timestep = args.args[5]
+    
+    # Override with kwargs if provided
+    if args.folder1 is not None:
+        folder1 = args.folder1
+    if args.folder2 is not None:
+        folder2 = args.folder2
+    if args.data_key is not None:
+        data_key = args.data_key
+    if args.xreso is not None:
+        xreso = args.xreso
+    if args.yreso is not None:
+        yreso = args.yreso
+    if args.timestep is not None:
+        timestep = args.timestep
+        
+        
 
 
+
+    folder1 = (current_path / Path(folder1)).resolve()
+    folder2 = (current_path / Path(folder2)).resolve()
+    ptt.p_ok(f"Asking for files from folder 1: {folder1}")
+    ptt.p_ok(f"Asking for files from folder 2: {folder2}")
+    
+    ptt.p_ok(f"Asking for data: {data_key}")
+    
+    ptt.p_ok(f"Asking for x resolution: {xreso}")
+    try:
+        xreso_eval = eval(xreso)
+    except:
+        ptt.p_error("Unrecognised xreso format for eval.")
+        sys.exit(1)
+        
+    ptt.p_ok(f"Asking for y resolution: {yreso}")
+    try:
+        yreso_eval = eval(yreso)
+    except:
+        ptt.p_error("Unrecognised yreso format for eval.")
+        sys.exit(1)
+    
+    ptt.p_ok(f"Asking for timestep: {timestep}")
+    try:
+        timestep_eval = eval(timestep)
+    except:
+        ptt.p_error("Unrecognised timestep format for eval.")
+        sys.exit(1)
+    
+    # Create 'Figures' folder 
+    output_dir = (current_path / f'Figures_{current_path.name}').resolve()
+    ptt.p_ok(f"Defined Figure folder : {output_dir}")
+
+    
+
+
+
+    print("\nInitializing the data Readers...")
+    
+    # Initialize classes
+    reader1 = ptt.VTKDataReader(str(folder1))
+    reader2 = ptt.VTKDataReader(str(folder2))
+    
+    
+    
+    
+    
+    print("\nInitializing the data Plotters...")
+    
+    # Configure the data plots
+    plotter = ptt.VTKPlotter(output_dir)
+    # plotter.figure_save = False
+    plotter.figure_tickfontsize = 5
+    plotter.pcolor_key = data_key
+    plotter.pcolor_max = 0.0001
+    plotter.pcolor_min = -plotter.pcolor_max
+    plotter.pcolor_cmap = 'RdBu'
+    plotter.contour_key = ''
+    plotter.quiver_u_key = ''
+    plotter.quiver_v_key = ''
+    plotter.rectangle_positions = [(-29000, -12500, -15000, 0), 
+                                   (-10000, -3000, -4000, 1000), 
+                                   (-7000, -2000, 4500, 8500), 
+                                   (-17000, -12000, -10000, -5000), 
+                                   (-1000, 4000, -2000, 2000)]
+    plotter.rectangle_colors = 'k'
+    new_figsize_list = [(5,5),
+                        (5,5),
+                        (4,4),
+                        (4,4),
+                        (4,4)]
+    new_filename_list = ['zoom_ouest',
+                         'zoom_ilelongue',
+                         'zoom_port',
+                         'zoom_pointepenhir',
+                         'zoom_bassinest']
+    
+    
+    
+    
+    
+    print("\nInitializing the new grids...")
+    
+    X_list, Y_list = [], []
+    for xmin, xmax, ymin, ymax in plotter.rectangle_positions:
+        x = np.arange(xmin, xmax + xreso_eval, xreso_eval)
+        y = np.arange(ymin, ymax + yreso_eval, yreso_eval)
+        X, Y = np.meshgrid(x, y)
+        X_list += [X]
+        Y_list += [Y]
+    
+    
+    
+    
+    print("\nInitializing the dask local cluster...")
+    # Creating the local cluster and client 
+    cluster = LocalCluster(n_workers=8, threads_per_worker=1)
+    client = Client(cluster)
+    ptt.p_ok(f"See client dashboard via dask at: {client.dashboard_link}")
+    cluster.scale(8)
+    
+    
+    print("\nInterpolating the data over the new grids...")
+ 
+    delayed_interpolation = []
+    if timestep_eval.__class__ == int:
+        
+        # Iterate over the zoom zones and delay the corresponding figure plotting
+        for X, Y in zip(X_list, Y_list):
+            delayed_interpolation += [interp_data(reader1, timestep_eval, 
+                                                  X, Y, data_key)]
+            delayed_interpolation += [interp_data(reader2, timestep_eval, 
+                                                  X, Y, data_key)]
+            
+    else:
+        try:
+            for t in timestep_eval:
+                # Iterate over the zoom zones and delay the corresponding figure plotting
+                for X, Y in zip(X_list, Y_list):
+                    delayed_interpolation += [interp_data(deepcopy(reader1), t, 
+                                                          X, Y, data_key)]
+                    delayed_interpolation += [interp_data(deepcopy(reader2), t, 
+                                                          X, Y, data_key)]
+        except:
+            ptt.p_error("Unrecognised timestep format. Should be either int or iterable")
+            sys.exit(1)
+    
+    # Ask for the computing of such interpolations
+    grid_data_list = dask.compute(*delayed_interpolation)
+    
+
+
+
+    
+    print("\nPlotting the data comparison...")
+    # Create the delayed task list
+    delayed_plot = []
+    N1 = folder1.parents[-current_path.parents.__len__()-2].name
+    N2 = folder2.parents[-current_path.parents.__len__()-2].name
+    old_filename = f'Comparison_{data_key}_{N1}_MOINS_{N2}'
+    if timestep_eval.__class__ == int:
+        # Iterate over the zoom zones and delay the corresponding figure plotting
+        for i in range(len(plotter.zoomed_plotters)):
+            newplotter = deepcopy(plotter.zoomed_plotters[i])
+            new_filename = new_filename_list[i]
+            new_figsize = new_figsize_list[i]
+            new_X = X_list[i]
+            new_Y = Y_list[i]
+            new_grid_data_1 = grid_data_list[i*2]
+            new_grid_data_2 = grid_data_list[i*2 + 1]
+            grid_data_comparison = new_grid_data_1 - new_grid_data_2
+            
+            newplotter.figure_filename = '_'.join([old_filename, f'{new_filename}', f"{timestep_eval:05d}"])
+            newplotter.figure_size = new_figsize
+            delayed_plot += [plot_quad_data_plotter(deepcopy(newplotter), 
+                                                    new_X, new_Y, 
+                                                    data_key,
+                                                    grid_data_comparison)]
+    else:
+        try:
+            for t in timestep_eval:
+                # Iterate over the zoom zones and delay the corresponding figure plotting
+                for i in range(len(plotter.zoomed_plotters)):
+                    newplotter = deepcopy(plotter.zoomed_plotters[i])
+                    new_filename = new_filename_list[i]
+                    new_figsize = new_figsize_list[i]
+                    new_X = X_list[i]
+                    new_Y = Y_list[i]
+                    new_grid_data_1 = grid_data_list[i*2]
+                    new_grid_data_2 = grid_data_list[i*2 + 1]
+                    grid_data_comparison = new_grid_data_1 - new_grid_data_2
+                    
+                    print(newplotter.figure_filename)
+                    
+                    newplotter.figure_filename = '_'.join([old_filename, f'{new_filename}', f"{t:05d}"])
+                    print(newplotter.figure_filename)
+                    newplotter.figure_size = new_figsize
+                    delayed_plot += [plot_quad_data_plotter(deepcopy(newplotter), 
+                                                            new_X, new_Y, 
+                                                            data_key,
+                                                            grid_data_comparison)]
+        except:
+            ptt.p_error("Unrecognised timestep format. Should be either int or iterable")
+            sys.exit(1)
+    
+    # Ask for the computing and saving of such figures
+    dask.compute(*delayed_plot)
+    
+    ptt.p_ok('Fin des affichages !')
+    
+    client.close()
+    time.sleep(1)
+    cluster.close()
+
+if __name__ == "__main__":
+    exit(main())

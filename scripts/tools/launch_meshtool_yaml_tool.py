@@ -19,7 +19,7 @@ def main():
 
     # Read args and kwargs
     parser = argparse.ArgumentParser(description='Process file and tool parameters')
-    parser.add_argument('args', nargs='*', help='Positional arguments for file and tool')
+    parser.add_argument('args', nargs='*', help='Positional arguments: file, tool')
     parser.add_argument('--yaml_file', dest='yaml_file_kwarg', default=None, help='File parameter as kwarg')
     parser.add_argument('--tool', dest='tool_kwarg', default=None, help='Tool parameter as kwarg')
     

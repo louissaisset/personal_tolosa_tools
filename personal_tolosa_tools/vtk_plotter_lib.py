@@ -6,17 +6,31 @@ Provides classes for reading, processing, and plotting VTK data
 """
 from .common import p_ok, p_error, p_warning
 
-import os
+import os, sys
 import typing
-from copy import deepcopy
+from copy import deepcopy, copy
+
 
 import vtk
 import numpy as np
+from scipy.interpolate import LinearNDInterpolator, NearestNDInterpolator
+from shapely import LineString, Polygon, polygonize
+from shapely.vectorized import contains
+
 import matplotlib as mpl
 import matplotlib.pyplot as plt
-from matplotlib.path import Path
-from scipy.interpolate import LinearNDInterpolator, NearestNDInterpolator
+# Paramètres d'affichage pour que ce soit toujours plus propre
+plt.rcParams["font.family"] = "cmr10"
+plt.rcParams["font.size"] = 8
+plt.rcParams['mathtext.fontset'] = "custom"
+plt.rcParams['mathtext.rm'] = "cmr10"
+plt.rcParams['mathtext.it'] = "cmr10:italic"
+plt.rcParams['mathtext.bf'] = "cmr10:bold"
+plt.rcParams['text.usetex'] = True
+plt.rcParams['axes.formatter.use_mathtext'] = True
 
+# from matplotlib.path import Path
+# import time
 
 class VTKDataReader:
     """
@@ -46,9 +60,15 @@ class VTKDataReader:
         vtk_files = [os.path.join(self.vtk_directory, f) 
                     for f in os.listdir(self.vtk_directory) 
                     if f.endswith(".vtk")]
+        
+        valid_timesteps_padded = [os.path.basename(f).split('.vtk')[0].split('_')[-1] for f in vtk_files]
+        padding_length = [len(f) for f in valid_timesteps_padded]
+        if not all([p == min(padding_length) for p in padding_length]):
+            p_warning(f"Different zero padding sizes in vtk files from {self.vtk_directory}")
+        
         return sorted(vtk_files)
     
-    def read_file(self, time_step: int) -> vtk.vtkUnstructuredGrid:
+    def read_file(self, file) -> vtk.vtkUnstructuredGrid:
         """
         Read VTK file for a given time step.
         
@@ -59,10 +79,34 @@ class VTKDataReader:
             VTK unstructured grid data
         """
         reader = vtk.vtkUnstructuredGridReader()
-        reader.SetFileName(self.vtk_files[time_step])
+        if file.__class__ == str:
+            if file in self.vtk_files :
+                reader.SetFileName(file)
+                p_ok(f"Used VTK file: {file}")
+            elif os.path.join(self.vtk_directory, file) in self.vtk_files:
+                reader.SetFileName(os.path.join(self.vtk_directory, file))
+                p_ok(f"Used VTK file: {os.path.join(self.vtk_directory, file)}")
+            else:
+                p_error(f"File does not exist : {os.path.join(self.vtk_directory, file)}")
+                sys.exit(1)
+        elif file.__class__ == int:
+            valid_timesteps_padded = [os.path.basename(f).split('.vtk')[0].split('_')[-1] for f in self.vtk_files]
+            valid_timesteps_int = [int(t) for t in valid_timesteps_padded]
+            try :
+                name_file = self.vtk_files[valid_timesteps_int.index(file)]
+                reader.SetFileName(name_file)
+                p_ok(f"Used VTK file: {name_file}")
+            except:
+                p_error(f"Asked timestep does not exist in vtk files: {file}")
+                sys.exit(1)
+        else:
+            p_error(f"Invalid file format: {file}")
+            sys.exit(1)
+        
         reader.ReadAllVectorsOn()
         reader.ReadAllScalarsOn()
         reader.Update()
+        
         return reader.GetOutput()
 
 
@@ -96,10 +140,21 @@ class VTKDataProcessor:
         self.edgepoints, self.num_edgepoints = self._extract_edgepoints()   # the vtk object of the points on the boundaries and the int of the number of such points
         self.edgepoints_array = self._create_edgepoints_array()             # a numpy array of the boundary points position 
         
-        self.list_edge_point_ids = self._create_boundary_edges_connectors() # a list of lists of the point ids making the boundary edges
-        self.boundary_list = self._create_grouped_boundary_points_list()    # a list of numpy array cutted as independent set of boundaries
+        self.boundary_polygon_list = self._create_boundary_polygon_list()
+        self.boundary_polygon = self._create_boundary_polygon()
         
-        self.xmin, self.xmax, self.ymin, self.ymax = self.get_data_lims()   # the min/max of the points coordinates
+        
+        self.xmin, self.xmax, self.ymin, self.ymax = self._extract_data_lims()   # the min/max of the points coordinates
+        
+        #####################  OLD TESTS  #####################
+        # self.connect_map_all = self._compute_adjacency_boundary_points_complete() 
+        # self.connect_map_junction_points = self._compute_adjacency_boundary_points_junction_points()
+        # self.connect_map_segment_points = self._compute_adjacency_boundary_points_segment_points()
+        # self.connect_map_other_points = self._compute_adjacency_boundary_points_other_points()
+        # self.segment_list, self.isolated_loops = self._compute_segments_and_isolated_loops_boundary_points()
+        # self.segment_to_points, self.point_to_segments, self.segment_adjacency, self.point_adjacency = self._compute_links_segments_points()
+        
+        
         
     def _extract_points(self) -> typing.Tuple:
         """
@@ -141,10 +196,13 @@ class VTKDataProcessor:
         feature_edges = vtk.vtkFeatureEdges()
         feature_edges.SetInputConnection(geometry_filter.GetOutputPort())
         feature_edges.BoundaryEdgesOn()
-        feature_edges.FeatureEdgesOn()
-        feature_edges.NonManifoldEdgesOn()
-        feature_edges.ManifoldEdgesOn()
-
+        # feature_edges.FeatureEdgesOn()
+        # feature_edges.NonManifoldEdgesOn()
+        # feature_edges.ManifoldEdgesOn()
+        feature_edges.FeatureEdgesOff()
+        feature_edges.ManifoldEdgesOff()
+        feature_edges.NonManifoldEdgesOff()
+        
         # Set feature angle for feature edge detection
         feature_edges.Update()
 
@@ -181,6 +239,17 @@ class VTKDataProcessor:
             cell_type = np.unique(cell_types)
             
         return cell_type
+        
+    def _extract_data_lims(self) -> typing.Tuple:
+        """
+        Returns the X and Y limits of the grid
+        """
+        xmin = np.nanmin(self.points_array[:, 0])
+        xmax = np.nanmax(self.points_array[:, 0])
+        ymin = np.nanmin(self.points_array[:, 1])
+        ymax = np.nanmax(self.points_array[:, 1])
+        
+        return (xmin, xmax, ymin, ymax)
     
     def _create_cell_data_dict(self) -> dict:
         """
@@ -229,96 +298,27 @@ class VTKDataProcessor:
         
         return np.array(self.edgepoints.GetData())
     
-    def _create_boundary_edges_connectors(self):
-        """
-        Extract edge connectors from the boundary edges.
-
-        Args:
-            boundary_edges_all (vtkPolyData): Boundary edges
-
-        Returns:
-            list: List of edge point IDs
-        """
-        list_edge_point_ids = []
-        for i in range(self.boundary_edges.GetNumberOfCells()):
-            cell = self.boundary_edges.GetCell(i)
-            point_ids = [cell.GetPointId(j) for j in range(cell.GetNumberOfPoints())]
-            list_edge_point_ids.append(point_ids)
-            
-        return list_edge_point_ids
-
-    def _create_grouped_boundary_points_list(self):
-        """
-        Order points along boundaries and return only the boundary with the largest area.
-
-        Args:
-            points (np.ndarray): Array of point coordinates
-            list_edge_point_ids (list): List of edge vertex indices
-
-        Returns:
-            tuple: Tuple containing list of boundary points and the largest boundary points
-        """
-        # Create adjacency list representation
-        adj_list = {}
-        for edge in self.list_edge_point_ids:
-            if edge[0] not in adj_list:
-                adj_list[edge[0]] = []
-            if edge[1] not in adj_list:
-                adj_list[edge[1]] = []
-            adj_list[edge[0]].append(edge[1])
-            adj_list[edge[1]].append(edge[0])
-
-        # Find all separate boundary loops
-        boundaries_id = []
-        unvisited = set(adj_list.keys())
-
-        while unvisited:
-            # Start a new boundary
-            start_point = next(iter(unvisited))
-            current = start_point
-            boundary = []
-            boundary_set = set()
-
-            while True:
-                boundary.append(current)
-                boundary_set.add(current)
-                unvisited.remove(current)
-
-                # Find next unvisited neighbor
-                next_point = None
-                for neighbor in adj_list[current]:
-                    if neighbor not in boundary_set:
-                        next_point = neighbor
-                        break
-
-                if next_point is None or next_point == start_point:
-                    break
-
-                current = next_point
-
-            # Only add boundaries_id with at least 3 points (needed for area calculation)
-            if len(boundary) >= 3:
-                boundaries_id.append(boundary)
-
-        if not boundaries_id:
-            return []
+    def _create_boundary_polygon_list(self) -> list:
         
-        boundaries_points_list = [self.edgepoints_array[b] for b in boundaries_id]
+        list_coords_boundary_edges = [np.array(self.boundary_edges.GetCell(i).GetPoints().GetData()) for i in range(self.boundary_edges.GetNumberOfCells())]
+        list_LineString_test = [LineString(L) for L in list_coords_boundary_edges]
+        boundary_polygon_list = [g for g in polygonize(list_LineString_test).geoms]
         
-        return boundaries_points_list
+        return(boundary_polygon_list)
     
-    def get_data_lims(self) -> typing.Tuple:
-        """
-        Returns the X and Y limits of the grid
-        """
-        xmin = np.nanmin(self.points_array[:, 0])
-        xmax = np.nanmax(self.points_array[:, 0])
-        ymin = np.nanmin(self.points_array[:, 1])
-        ymax = np.nanmax(self.points_array[:, 1])
+    def _create_boundary_polygon(self) -> Polygon:
         
-        return (xmin, xmax, ymin, ymax)
+        boundary_polygon_list = self.boundary_polygon_list
+        
+        all_polygons_area = [g.area for g in boundary_polygon_list]
+        biggest_polygon = boundary_polygon_list[all_polygons_area.index(max(all_polygons_area))]
+        other_polygons = [boundary_polygon_list[i] for i in range(len(boundary_polygon_list)) if i != all_polygons_area.index(max(all_polygons_area))]
+
+        boundary_polygon = Polygon(shell=biggest_polygon, holes=other_polygons)
+        
+        return(boundary_polygon)
     
-    def reshape_to_grid(self) -> typing.Tuple:
+    def reshape_to_grid(self) -> tuple:
         """
         Reshape data to grid format for quad cells.
         
@@ -332,7 +332,7 @@ class VTKDataProcessor:
         cell_data_grid = {k: v.reshape(shape) for k, v in self.cell_data.items()}
         return center_grid_X, center_grid_Y, cell_data_grid
     
-    def compute_triangulations(self) -> typing.Tuple:
+    def compute_triangulations(self) -> tuple:
         """
         Compute triangulations for triangle cells.
         
@@ -368,8 +368,7 @@ class VTKDataProcessor:
         
         return tripcolor_triangulation, tricontour_triangulation
     
-    
-    def compute_radiusratio(self):
+    def compute_radiusratio(self) -> np.array:
         
         mesh_filter = vtk.vtkMeshQuality()
         mesh_filter.SetInputData(self.data)
@@ -405,45 +404,9 @@ class VTKDataProcessor:
         cell_data_diff = {k: (cell_data1[k] - cell_data2[k]) for k in cell_data1.keys() if k in cell_data2.keys()}
         
         return cell_data_diff
-
-    def calculate_area(self, points):
-        """
-        Calculate the area of a polygon using the shoelace formula.
-
-        Args:
-            points (np.ndarray): Array of point coordinates
-
-        Returns:
-            float: Area of the polygon
-        """
-        # Calculate area using the shoelace formula
-        x = points[:, 0]
-        y = points[:, 1]
-
-        # Roll the coordinates to get pairs for the formula
-        x_next = np.roll(x, -1)
-        y_next = np.roll(y, -1)
-
-        # Shoelace formula
-        area = 0.5 * np.abs(np.sum(x * y_next - x_next * y))
-        return area
-    
-    def calculate_largest_boundary(self):
-        """
-        Calculate the area for each boundary and find the largest
         
-        Returns:
-            tuple: the point list and the index of the boundary
-        """
-        area_list = [self.calculate_area(b_point) for b_point in self.boundary_list]
 
-        max_area = max(area_list)
-        largest_boundary_index = area_list.index(max_area)
-        largest_boundary = self.boundary_list[largest_boundary_index]
-        return largest_boundary, largest_boundary_index
-
-
-    def compute_masks_for_paths(self, X, Y, inside_paths=None, outside_paths=None):
+    def compute_mask_grid(self, X, Y) -> np.array:
         """
         Create masks for points 'inside' and 'outside' given boundary paths using vectorized operations.
         Handles both single paths and lists of paths.
@@ -451,50 +414,16 @@ class VTKDataProcessor:
         Args:
             X (np.ndarray): X coordinates of the grid
             Y (np.ndarray): Y coordinates of the grid
-            inside_paths (np.ndarray or list of np.ndarray): Single boundary path or list of paths for inside mask. Default is None.
-            outside_paths (np.ndarray or list of np.ndarray): Single boundary path or list of paths for outside mask. Default is None.
 
         Returns:
-            dict: Dictionary containing masks for 'inside' and/or 'outside'
+            complete_mask: a np.array containing the gridded mask of the points inside of self.boundary_polygon
         """
-        points = np.column_stack((X.ravel(), Y.ravel()))
-        masks = {}
-
-        def create_mask_for_paths(paths, inverse=False):
-            # Convert single path to list if necessary
-            paths_list = [paths] if isinstance(paths, np.ndarray) else paths
-            
-            # Initialize mask
-            mask = np.zeros(len(points), dtype=bool)
-            
-            # Process each path separately
-            for path_vertices in paths_list:
-                # Ensure path is closed
-                if not np.array_equal(path_vertices[0], path_vertices[-1]):
-                    path_vertices = np.vstack([path_vertices, path_vertices[0]])
-                
-                # Create path
-                path = Path(path_vertices[:, 0:2])
-                current_mask = path.contains_points(points)
-                
-                # Update mask with OR operation
-                mask = mask | current_mask
-            
-            # Invert if needed (for outside paths)
-            if inverse:
-                mask = ~mask
-                
-            return mask.reshape(X.shape)
-
-        if inside_paths is not None:
-            masks['inside'] = create_mask_for_paths(inside_paths)
-
-        if outside_paths is not None:
-            masks['outside'] = create_mask_for_paths(outside_paths, inverse=True)
-
-        return masks
+        
+        complete_mask = contains(self.boundary_polygon, X.ravel(), Y.ravel()).reshape(X.shape)
+        
+        return complete_mask
     
-    def compute_interpolation_masked_grid(self, x, y, z, X, Y, mask=None, method='linear'):
+    def compute_interpolation_masked_grid(self, x, y, z, X, Y, method='linear'):
         """
         Interpolate scattered data onto a grid, optionally using a mask.
         
@@ -511,9 +440,6 @@ class VTKDataProcessor:
             np.ndarray: Interpolated values on the grid
         """
         
-        # Points where we need to interpolate (masked points)
-        points_to_interpolate = np.column_stack((X[mask].ravel(), Y[mask].ravel()))
-        
         # Original data points
         points = np.column_stack((x, y))
         
@@ -526,20 +452,434 @@ class VTKDataProcessor:
             print("    \033[31mERROR:\033[0m Valid interpolation methods are 'linear' or 'nearest'")
             return np.array([])
         
-        if mask is None:
-            # Interpolate entire grid
-            return interpolator(np.column_stack((X.ravel(), Y.ravel()))).reshape(X.shape)
-        else:
-            # Initialize result array
-            result = np.full(X.shape, np.nan)
+        mask = self.compute_mask_grid(X, Y)
+        
+        # Initialize result array
+        result = np.full(X.shape, np.nan)
+        
+        # Points where we need to interpolate (masked points)
+        points_to_interpolate = np.column_stack((X[mask].ravel(), Y[mask].ravel()))
+        
+        # Interpolate only at masked points
+        result[mask] = interpolator(points_to_interpolate)
+        
+        return result
+    
+    # OLD UNUSED AND UNEFFICIENT
+    def _compute_adjacency_boundary_points_complete(self):
+        
+        list_edge_point_ids = []
+        for i in range(self.boundary_edges.GetNumberOfCells()):
+            cell = self.boundary_edges.GetCell(i)
+            point_ids = [cell.GetPointId(j) for j in range(cell.GetNumberOfPoints())]
+            list_edge_point_ids.append(point_ids)
+        
+        adj_list = {}
+        for edge in list_edge_point_ids:
+            if edge[0] not in adj_list:
+                adj_list[edge[0]] = []
+            if edge[1] not in adj_list:
+                adj_list[edge[1]] = []
+            if edge[1] not in adj_list[edge[0]]:
+                adj_list[edge[0]].append(edge[1])
+            if edge[0] not in adj_list[edge[1]]:
+                adj_list[edge[1]].append(edge[0])
+        return(adj_list)
+    
+    # OLD UNUSED AND UNEFFICIENT
+    def _compute_adjacency_boundary_points_junction_points(self):
+        connect_map_junction_points = {i: connect for i, connect in self.connect_map_all.items() if len(connect)>2}
+        return(connect_map_junction_points)
+
+    # OLD UNUSED AND UNEFFICIENT
+    def _compute_adjacency_boundary_points_segment_points(self):
+        connect_map_segment_points = {i: connect for i, connect in self.connect_map_all.items() if len(connect)==2}
+        return(connect_map_segment_points)
+
+    # OLD UNUSED AND UNEFFICIENT
+    def _compute_adjacency_boundary_points_other_points(self):
+        connect_map_other_points = {i: connect for i, connect in self.connect_map_all.items() if len(connect)<2}
+        return(connect_map_other_points)
+
+    # OLD UNUSED AND UNEFFICIENT
+    def _compute_segments_and_isolated_loops_boundary_points(self):
+        segment_list = []
+        visited_points = list(self.connect_map_junction_points.keys())
+        for i, connections in self.connect_map_junction_points.items():
+            for c in connections:
+                if c not in visited_points:
+                    segment = [i]
+                    current_point = copy(c)
+                    while current_point not in visited_points:
+                        visited_points.append(current_point)
+                        segment.append(current_point)
+                        p1, p2 = self.connect_map_segment_points[current_point]
+                        
+                        if (p1 not in visited_points) and (p2 not in visited_points):
+                            current_point = p1
+                        elif (p1 in visited_points) and (p2 not in visited_points):
+                            current_point = p2
+                        elif (p2 in visited_points) and (p1 not in visited_points):
+                            current_point = p1
+                        elif (p1 in visited_points) and (p2 in visited_points):
+                            if (p1 == i) and (p2 == i):
+                                segment.append(p1)
+                            elif (p1 == i) and (p2 in self.connect_map_junction_points.keys()):
+                                segment.append(p2)
+                            elif (p2 == i) and (p1 in self.connect_map_junction_points.keys()):
+                                segment.append(p1)
+                            elif (p1 != i) and (p2 in self.connect_map_junction_points.keys()):
+                                segment.append(p2)
+                            elif (p2 != i) and (p1 in self.connect_map_junction_points.keys()):
+                                segment.append(p1)
+                            break
+                    segment_list.append(segment)
+        
+        isolated_loops = []
+        for i, connections in self.connect_map_segment_points.items():
+            if i not in visited_points:
+                loop = [i]
+                current_point = copy(i)
+                while current_point not in visited_points:
+                    loop.append(current_point)
+                    visited_points.append(current_point)
+                    p1, p2 = self.connect_map_segment_points[current_point]
+                    
+                    if (p1 not in visited_points) and (p2 not in visited_points):
+                        current_point = p1
+                    elif (p1 in visited_points) and (p2 not in visited_points):
+                        current_point = p2
+                    elif (p2 in visited_points) and (p1 not in visited_points):
+                        current_point = p1
+                    elif (p1 in visited_points) and (p2 in visited_points):
+                        if (p1 == i) and (p2 == i):
+                            loop.append(p1)
+                        elif p1 == i:
+                            loop.append(p2)
+                        elif p2 == i:
+                            loop.append(p1)
+                        break
+                isolated_loops.append(loop)
+        return(segment_list, isolated_loops)
+
+    # OLD UNUSED AND UNEFFICIENT
+    # SOME 2 points segments are not taken !!!!!
+    def _compute_links_segments_points(self):
+        
+        segment_to_points = {i: [self.segment_list[i][0], self.segment_list[i][-1]] for i in range(len(self.segment_list))}
+        
+        point_to_segments = {p:[] for p in self.connect_map_junction_points.keys()}
+        for s, p_list in segment_to_points.items():
+            for p in p_list:
+                point_to_segments[p].append(s)
+                
+        segment_adjacency = {s:[] for s in segment_to_points.keys()}
+        for s, p_list in segment_to_points.items():
+            for p in p_list:
+                for new_s in point_to_segments[p]:
+                    if (new_s not in segment_adjacency[s]) and (new_s != s):
+                        segment_adjacency[s].append(new_s)
+        
+
+        point_adjacency = {p:[] for p in point_to_segments.keys()}
+        for p, s_list in point_to_segments.items():
+            for s in s_list:
+                for new_p in segment_to_points[s]:
+                    if (new_p not in point_adjacency[p]) and (new_p != p):
+                        point_adjacency[p].append(new_p)
+        
+        return(segment_to_points, point_to_segments, segment_adjacency,point_adjacency)
+    
+        
+    # def _compute_points_path(self, start_point, path):
+        
+    #     visited_points = (len(path)+1)*[None]
+    #     # Initialize the set of visited points with the start point
+    #     current_point = start_point
+    #     cnt = 0
+    #     visited_points[cnt] = current_point
+    #     # Iterate through the segments
+    #     for segment in path:
+    #         cnt += 1
+    #         # Check if the segment is connected to the point
+    #         if segment in self.point_to_segments[current_point]:
+    #             # Get the points for this segment
+    #             segment_points = self.segment_to_points[segment]
+    #             # Find the point in this segment that is different from the current point
+    #             next_point = next((point for point in segment_points if point != current_point), None)
+    #         else:
+    #             next_point = None
+    #         visited_points[cnt] = next_point
+    #         current_point = next_point
+    #     return visited_points
+    
+    # def _compute_path_to_be_visited(self, start_point, current_path, visited_paths):
+    #     if current_path == []:
+    #         all_new_paths = [[s] for s in self.point_to_segments[start_point]]
+    #     else:
+    #         all_new_paths = []
+    #         for s in self.point_to_segments[self._compute_points_path(start_point, current_path)[-1]]:
+    #             if s not in current_path:
+    #                 all_new_paths.append(current_path + [s])
+    #     resu = [p for p in all_new_paths if set(p) not in visited_paths]
+    #     return(resu)
+    
+    # def _compute_all_closed_loops(self, start_point, depth=10000):
+    #     start_path = []
+    #     closed_loops = []
+    #     current_path = start_path
+    #     visited_paths = []
+    #     cnt = 0
+    #     while True:
             
-            # Points where we need to interpolate (masked points)
-            points_to_interpolate = np.column_stack((X[mask].ravel(), Y[mask].ravel()))
+    #         if current_path not in visited_paths:
+    #             visited_paths.append(set(current_path))
+                
+    #         visited_points = self._compute_points_path(start_point, current_path)
+    #         possible_new_paths = self._compute_path_to_be_visited(start_point, current_path, visited_paths)
             
-            # Interpolate only at masked points
-            result[mask] = interpolator(points_to_interpolate)
+    #         # if not cnt % 10000:
+    #         # print('   cnt', cnt)
+    #         # print('   current_path', current_path)
+    #         # print('   visited_points', visited_points)
+    #         # print('   possible_new_paths', possible_new_paths)
+                
+    #         # fig, ax = plt.subplots(1, 1, dpi=300)
+    #         # ax.set_aspect(1)
+    #         # ax.tripcolor(tripcolor_tri, processor.cell_data['bathy'], cmap='Greys_r')
+    #         # for L in processor.segment_to_points.keys():
+    #         #     if L in current_path:
+    #         #         code = '-r'
+    #         #     elif L in list(itertools.chain(*possible_new_paths)):
+    #         #         code = '-k'
+    #         #     else:
+    #         #         code = '-y'
+    #         #     ax.plot(processor.edgepoints_array[processor.segment_list[L], 0], 
+    #         #             processor.edgepoints_array[processor.segment_list[L], 1], 
+    #         #             code, ms=3)   
+    #         # for P in processor.connect_map_junction_points.keys():
+    #         #     if P in visited_points:
+    #         #         code = '^b'
+    #         #     else:
+    #         #         code = '^y'
+    #         #     ax.plot(processor.edgepoints_array[P,0], 
+    #         #             processor.edgepoints_array[P,1], 
+    #         #             code, ms=6)
             
-            return result
+    #         # ax.grid()
+    #         # plt.show()
+            
+    #         if (current_path == []) and (possible_new_paths == []):
+    #             break
+    #         elif len(current_path) < depth+1:
+    #             if (visited_points[-1] == visited_points[0]) and len(current_path)>0:
+    #                 print('   FOUND CLOSED LOOP')
+    #                 closed_loops.append(current_path)
+    #                 current_path = current_path[:-1]
+    #             elif visited_points[-1] in visited_points[:-1] and len(current_path)>0:
+    #                 # print('   MUST GO BACK')
+    #                 current_path = current_path[:-1]
+    #             else:
+    #                 if len(possible_new_paths):
+    #                     current_path = possible_new_paths.pop()
+    #                 else:
+    #                     current_path = current_path[:-1]
+    #         else:
+    #             # print('   TOO BIG')
+    #             current_path = current_path[:-1]
+                
+    #         cnt += 1
+    #     return(closed_loops)
+    
+    # def _compute_complete_closed_loop_point_indices(self, start_point, loop_segments):
+    #     loop_junction_points = self._compute_points_path(start_point, loop_segments)
+    #     all_points = []
+    #     for seg, stp in zip(loop_segments, loop_junction_points[:-1]):
+    #         if self.segment_list[seg][0] == stp:
+    #             all_points += self.segment_list[seg]
+    #         else:
+    #             all_points += self.segment_list[seg][::-1]
+    #     return(all_points)
+    
+    # def _compute_biggest_bounday(self):
+    #     """"
+    #     Nouvelle méthode pour calculer la frontière englobant la plus grande 
+    #     aire.
+    #     Je pars d'un point quelconque
+    #     Je cherche la plus grosse boucle obtenue pour un minimum d'étape
+    #     
+    #     Cherche du coté boucle géographique (points ou segments à l'intérieur d'une boucle)
+    #     """
+
+    #     start_point = 0
+    #     closed_loops = processor._compute_all_closed_loops(start_point, depth=7)
+        
+    #     all_points = processor._compute_complete_closed_loop_point_indices(start_point, closed_loops[2])
+    #     processor.calculate_area(processor.edgepoints_array[all_points])
+    #     plt.figure()
+    #     plt.plot(processor.edgepoints_array[all_points,0], 
+    #             processor.edgepoints_array[all_points,1]) 
+    #     plt.show()
+        
+        
+    #     resu = []
+    #     for start_point in processor.point_to_segments.keys():
+    #         init_depth = 2
+    #         closed_loops = []
+    #         while not closed_loops:
+    #             closed_loops = processor._compute_all_closed_loops(start_point, depth=init_depth)
+    #             if len(closed_loops) == 1:
+    #                 biggest_closed_loop = closed_loops[0]
+    #             else:
+    #                 biggest_closed_loop, biggest_closed_loop_area = None, 0
+    #                 for C in closed_loops:
+    #                     all_points = processor._compute_complete_closed_loop_point_indices(start_point, C)
+    #                     area = processor.calculate_area(processor.edgepoints_array[all_points])
+    #                     if area > biggest_closed_loop_area:
+    #                         biggest_closed_loop_area = area
+    #                         biggest_closed_loop = C
+    #             init_depth += 1
+    #         resu.append(biggest_closed_loop)
+        
+    #     for C, start_point in zip(resu, processor.point_to_segments.keys()):
+    #         fig, ax = plt.subplots(1, 1, dpi=300)
+    #         ax.set_aspect(1)
+    #         ax.tripcolor(tripcolor_tri, processor.cell_data['bathy'], cmap='Greys_r')
+    #         for L in processor.segment_to_points.keys():
+    #             if L in C:
+    #                 code = '-r'
+    #             else:
+    #                 code = '-y'
+    #             ax.plot(processor.edgepoints_array[processor.segment_list[L], 0], 
+    #                     processor.edgepoints_array[processor.segment_list[L], 1], 
+    #                     code, ms=3)   
+    #         for P in processor.connect_map_junction_points.keys():
+    #             if P in processor._compute_points_path(start_point, C):
+    #                 code = '^b'
+    #             else:
+    #                 code = '^y'
+    #             ax.plot(processor.edgepoints_array[P,0], 
+    #                     processor.edgepoints_array[P,1], 
+    #                     code, ms=6)
+            
+    #         ax.grid()
+    #         plt.show()
+    
+    
+    # def _create_boundary_edges_connectors(self):
+    #     """
+    #     Extract edge connectors from the boundary edges.
+
+    #     Args:
+    #         boundary_edges_all (vtkPolyData): Boundary edges
+
+    #     Returns:
+    #         list: List of edge point IDs
+    #     """
+    #     list_edge_point_ids = []
+    #     for i in range(self.boundary_edges.GetNumberOfCells()):
+    #         cell = self.boundary_edges.GetCell(i)
+    #         point_ids = [cell.GetPointId(j) for j in range(cell.GetNumberOfPoints())]
+    #         list_edge_point_ids.append(point_ids)
+            
+    #     return list_edge_point_ids
+
+    # # UNUSED
+    # # ERROR SUR LES SORTIES VTK DE TOLOSA 
+    # def _create_grouped_boundary_points_list(self):
+    #     """
+    #     Order points along boundaries and return only the boundary with the largest area.
+
+    #     Returns:
+    #         tuple: Tuple containing list of boundary points and the largest boundary points
+    #     """
+    #     # Create adjacency list representation
+    #     adj_list = {}
+    #     for edge in self.list_edge_point_ids:
+    #         if edge[0] not in adj_list:
+    #             adj_list[edge[0]] = []
+    #         if edge[1] not in adj_list:
+    #             adj_list[edge[1]] = []
+    #         adj_list[edge[0]].append(edge[1])
+    #         adj_list[edge[1]].append(edge[0])
+
+    #     # Find all separate boundary loops
+    #     boundaries_id = []
+    #     unvisited = set(adj_list.keys())
+    #     # print(unvisited)
+    #     while unvisited:
+    #         # Start a new boundary
+    #         start_point = next(iter(unvisited))
+    #         current = start_point
+    #         boundary = []
+    #         boundary_set = set()
+
+    #         while True:
+    #             boundary.append(current)
+    #             boundary_set.add(current)
+    #             unvisited.remove(current)
+
+    #             # Find next unvisited neighbor
+    #             next_point = None
+    #             for neighbor in adj_list[current]:
+    #                 if neighbor not in boundary_set:
+    #                     next_point = neighbor
+    #                     break
+
+    #             if next_point is None or next_point == start_point:
+    #                 break
+
+    #             current = next_point
+
+    #         # Only add boundaries_id with at least 3 points (needed for area calculation)
+    #         if len(boundary) >= 3:
+    #             boundaries_id.append(boundary)
+
+    #     if not boundaries_id:
+    #         return []
+        
+    #     boundaries_points_list = [self.edgepoints_array[b] for b in boundaries_id]
+        
+    #     # print(boundaries_points_list)
+        
+    #     return boundaries_points_list
+    
+    # def calculate_area(self, points):
+    #     """
+    #     Calculate the area of a polygon using the shoelace formula.
+
+    #     Args:
+    #         points (np.ndarray): Array of point coordinates
+
+    #     Returns:
+    #         float: Area of the polygon
+    #     """
+    #     # Calculate area using the shoelace formula
+    #     x = points[:, 0]
+    #     y = points[:, 1]
+
+    #     # Roll the coordinates to get pairs for the formula
+    #     x_next = np.roll(x, -1)
+    #     y_next = np.roll(y, -1)
+
+    #     # Shoelace formula
+    #     area = 0.5 * np.abs(np.sum(x * y_next - x_next * y))
+    #     return area
+    
+    # def calculate_largest_boundary(self, boundary_list):
+    #     """
+    #     Calculate the area for each boundary and find the largest
+        
+    #     Returns:
+    #         tuple: the point list and the index of the boundary
+    #     """
+    #     area_list = [self.calculate_area(b_point) for b_point in boundary_list]
+
+    #     max_area = max(area_list)
+    #     largest_boundary_index = area_list.index(max_area)
+    #     largest_boundary = boundary_list[largest_boundary_index]
+    #     return largest_boundary, largest_boundary_index
+    
 
 class VTKPlotter:
     """
@@ -555,6 +895,7 @@ class VTKPlotter:
                  figure_outputdir: str = './Figures/', 
                  figure_title: str = '', 
                  figure_filename: str = '', 
+                 figure_save = True,
                  figure_size: tuple = (4, 4),
                  figure_dpi: int = 300,
                  figure_xlim: tuple = (None, None),
@@ -602,6 +943,7 @@ class VTKPlotter:
             figure_outputdir (str): Directory to save output figures, Defaults to './Figures/'
             figure_title (str): The figure title, Defaults to ''
             figure_filename (str): Filename with which the figure is saved, Defaults to '', (will be created through the autofilename method)
+            figure_save (bool): Boolean flag to activate figure saving, Defaults to True.
             figure_size (tuple, optional): Figure size in inches. Defaults to (4,4).
             figure_dpi (int, optional): Resolution of the figure. Defaults to 300.
             figure_xlim (tuple, optional): X axis view limit in the x units. Defaults to (None None).
@@ -648,6 +990,7 @@ class VTKPlotter:
         self.figure_outputdir = figure_outputdir
         self.figure_title= figure_title 
         self.figure_filename = figure_filename
+        self.figure_save = figure_save
         self.figure_size = figure_size
         self.figure_dpi = figure_dpi
         self.figure_xlim = figure_xlim
@@ -690,7 +1033,7 @@ class VTKPlotter:
         self.rectangle_colors = rectangle_colors if rectangle_colors is not None else []
         self.rectangle_linewidths = rectangle_linewidths if rectangle_linewidths is not None else []
             
-        if not os.path.exists(figure_outputdir):
+        if (not os.path.exists(figure_outputdir)) and (not self.figure_no_save):
             os.makedirs(figure_outputdir)
             
             
@@ -803,14 +1146,17 @@ class VTKPlotter:
         else:
             figure_filename = self.auto_filename()
         
-        fig.savefig(os.path.join(self.figure_outputdir, 
-                                 f"{figure_filename}.{self.figure_format}"),
-                    format=self.figure_format, 
-                    bbox_inches='tight')
-        
-        # Close the figure
-        plt.close(fig)
-        
+        if self.figure_save :
+            fig.savefig(os.path.join(self.figure_outputdir, 
+                                     f"{figure_filename}.{self.figure_format}"),
+                        format=self.figure_format, 
+                        bbox_inches='tight')
+            
+            # Close the figure
+            plt.close(fig)
+        else :
+            return(fig, ax)
+            
     def updated_rectangle_args(self):
         if self.rectangle_positions is None :   
             new_rectangle_positions = []
@@ -865,7 +1211,6 @@ class VTKPlotter:
         else:
             return None
         
-    
     def dash_patterns(self) -> typing.List:
         """
         Custom dash patterns.
@@ -886,7 +1231,7 @@ class VTKPlotter:
         cmap = mpl.cm.get_cmap(colormap_name)
         return [cmap(i / (n - 1)) for i in range(n)]
     
-    def plot_quad_data(self, time_step: int, 
+    def plot_quad_data(self, #time_step: int, 
                        center_grid_X: np.ndarray, center_grid_Y: np.ndarray, 
                        cell_data: typing.Dict) -> None:
         """
@@ -959,8 +1304,12 @@ class VTKPlotter:
         if self.pcolor_key:
             self._setup_colorbar(fig, ax, pcolor_plot)
         
-        # Ada a title and save
-        self._finalize_figure(fig, ax)
+        if self.figure_save:
+            # Ad a title and save
+            self._finalize_figure(fig, ax)
+        else :
+            fig, ax = self._finalize_figure(fig, ax)
+            return(fig, ax)
     
     def plot_triangle_data(self, 
                            tripcolor_tri: mpl.tri.Triangulation,
@@ -986,13 +1335,15 @@ class VTKPlotter:
                                     vmax=self.pcolor_max,
                                     cmap=self.pcolor_cmap,  
                                     rasterized=True,
+                                    clip_on=True,
                                     zorder=0)
         
         # Plot the grid
         if self.triplot:
             ax.triplot(tripcolor_tri, 
                        linewidth=self.triplot_linewidth, 
-                       color=self.triplot_color)
+                       color=self.triplot_color,
+                       clip_on=True)
         
         # Plot bathymetry
         if self.contour_key:
@@ -1016,6 +1367,7 @@ class VTKPlotter:
                                      cell_data[self.quiver_v_key][random_indices],
                                      scale=self.quiver_scale, 
                                      scale_units='width', 
+                                     clip_on=True,
                                      zorder=10)
             ax.quiverkey(current_plot, 
                          self.quiver_positionkey[0], 
@@ -1044,8 +1396,12 @@ class VTKPlotter:
         if self.pcolor_key:
             self._setup_colorbar(fig, ax, ssh_plot)
         
-        # Ada a title and save
-        self._finalize_figure(fig, ax)
+        if self.figure_save:
+            # Ad a title and save
+            self._finalize_figure(fig, ax)
+        else :
+            fig, ax = self._finalize_figure(fig, ax)
+            return(fig, ax)
     
     def Plot(self, processor):
         

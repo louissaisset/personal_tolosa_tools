@@ -6,15 +6,10 @@ Ceci est un script temporaire.
 """
 
 import sys, os
-sys.path.append("/local/home/lsaisset/DATA/Scripts/personal_tolosa_tools/")
+sys.path.append(os.path.expanduser("~/DATA/Scripts/personal_tolosa_tools/"))
 import personal_tolosa_tools as ptt
 
 from pathlib import Path
-
-# print("    \033[31mERROR:\033[0m 
-# print("       \033[32mOK:\033[0m 
-# print("  \033[33mWARNING:\033[0m 
-
 
 def main():
     
@@ -25,34 +20,34 @@ def main():
     # Define paths to the VTK folders and output folder
     folder1_path = Path("/local/home/lsaisset/DATA/tests_persos/Comparaison/version_datarmor/res/vtk/")
     if not folder1_path.is_dir():
-        print("    \033[31mERROR:\033[0m Cannot proceed without a valid first folder")
+        ptt.p_error("Cannot proceed without a valid first folder")
     folder1_path = folder1_path.resolve()
-    print(f"       \033[32mOK:\033[0m First input folder exists : {folder1_path}")
+    ptt.p_ok(f"First input folder exists : {folder1_path}")
         
 
 
     folder2_path = Path("/local/home/lsaisset/DATA/tests_persos/Comparaison/version_locale/res/vtk/")
     if not folder2_path.is_dir():
-        print("    \033[31mERROR:\033[0m Cannot proceed without a valid second folder")
+        ptt.p_error("Cannot proceed without a valid second folder")
     folder2_path = folder2_path.resolve()
-    print(f"       \033[32mOK:\033[0m Second input folder exists : {folder2_path}")
+    ptt.p_ok(f"Second input folder exists : {folder2_path}")
     
 
 
     folder_out_path = Path("/local/home/lsaisset/DATA/tests_persos/Comparaison/Figures")
-    print(f"       \033[32mOK:\033[0m Defined outfolder : {folder_out_path}")
+    ptt.p_ok(f"Defined outfolder : {folder_out_path}")
     
     
     timestep=0
     # if len(sys.argv) > 1:
     #     try:
     #         timestep = int(sys.argv[1])
-    #         print(f"       \033[32mOK:\033[0m Asking for timestep : {timestep}")
+    #         ptt.p_ok(f"Asking for timestep : {timestep}")
     #     except ValueError:
-    #         print("    \033[31mERROR:\033[0m Cannot proceed without a valid timestep")
+    #         ptt.p_error(f"Cannot proceed without a valid timestep")
     #         return 1
     # else:
-    #     print("    \033[31mERROR:\033[0m Cannot proceed without a valid timestep")
+    #     ptt.p_error(f"Cannot proceed without a valid timestep")
 
 
     print("\nBeginning the plots creation...")
@@ -64,22 +59,22 @@ def main():
     # Read the VTK files for the specified timestep
     data1 = reader1.read_file(timestep)
     data2 = reader2.read_file(timestep)
-    print("       \033[32mOK:\033[0m VTK data correctly read")
+    ptt.p_ok("VTK data correctly read")
 
     # Process the VTK data
     processor1 = ptt.VTKDataProcessor(data1)
     processor2 = ptt.VTKDataProcessor(data2)
-    print("       \033[32mOK:\033[0m VTK data correctly processed")
+    ptt.p_ok("VTK data correctly processed")
 
 
     # Calculate the differences in cell data
     cell_data_diff = processor1.compute_cell_data_differences(processor2)
 
     if not cell_data_diff:
-        print("    \033[31mERROR:\033[0m No common cell data keys found between the two datasets.")
+        ptt.p_error("No common cell data keys found between the two datasets.")
         return 1
     else:
-        print("       \033[32mOK:\033[0m Common cell data keys found : {cell_data_diff.keys()}")
+        ptt.p_ok("Common cell data keys found : {cell_data_diff.keys()}")
 
     # Configure the data plots
     plotter = ptt.VTKPlotter(folder_out_path)
@@ -112,7 +107,7 @@ def main():
                                    tricontour_tri,
                                    cell_data_diff,
                                    processor1.cell_centers_array)
-        print(f"       \033[32mOK:\033[0m Difference plot for key '{k}' generated successfully.")
+        ptt.p_ok(f"Difference plot for key '{k}' generated successfully.")
 
 # Main script
 if __name__ == "__main__":

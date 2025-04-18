@@ -21,11 +21,11 @@ def main():
     
     # Initialize classes
     reader = ptt.VTKDataReader(current_path)
-    vtk_file = [f for f in reader._get_vtk_files() if f.endswith("_diag.vtk")][0]
-    ptt.p_ok(f"Asking for file : {vtk_file}")
-    if not vtk_file:
-        ptt.p_error("Cannot proceed without a valid '_diag.vtk' file")
-        return 1
+    # vtk_file = [f for f in reader._get_vtk_files() if f.endswith("_diag.vtk")][0]
+    # ptt.p_ok(f"Asking for file : {vtk_file}")
+    # if not vtk_file:
+    #     ptt.p_error("Cannot proceed without a valid '_diag.vtk' file")
+    #     return 1
     
     output_dir = (current_path / f'Figures_{current_path.name}').resolve()
     ptt.p_ok(f"Defined Figure folder : {output_dir}")
@@ -34,8 +34,8 @@ def main():
     
     print("\nBeginning the plotting...")
     
-    # Read data
-    vtk_data = reader.read_file(0)
+    # Read data in first encountered vtk file
+    vtk_data = reader.read_file(reader.vtk_files[0])
     
     # Processdata
     processor = ptt.VTKDataProcessor(vtk_data)    
