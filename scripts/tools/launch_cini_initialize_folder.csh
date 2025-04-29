@@ -7,9 +7,9 @@ set path_cini = '~/SOFTS/config_prep_tools/cini'
 echo "       \e[32mOK:\e[0m Assumed path to cini: $path_cini"
 
 # Charger le module nécessaire
-source /usr/share/Modules/3.2.10/init/csh
-module load intel-fc-20/19.1.3
-echo "       \e[32mOK:\e[0m Loaded modules: intel-fc-20/19.1.3"
+#source /usr/share/Modules/3.2.10/init/csh
+#module load intel-fc-20/19.1.3
+#echo "       \e[32mOK:\e[0m Loaded modules: intel-fc-20/19.1.3"
 
 # Sauvegarder le chemin de départ
 set start_path = $cwd
