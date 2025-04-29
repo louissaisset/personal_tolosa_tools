@@ -7,7 +7,8 @@ echo -e "\n       \e[32mOK:\e[0m Begining wrapper for meshtool"
 
 
 # change for other users
-necessary_conda_env=meshtool-env
+# necessary_conda_env=meshtool-env
+necessary_conda_env=new_meshtool
 path_meshtool=/local/home/lsaisset/SOFTS/mesh-tool
 
 if [[ ! "$CONDA_DEFAULT_ENV" == "$necessary_conda_env" ]]; then
