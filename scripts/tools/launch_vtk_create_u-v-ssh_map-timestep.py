@@ -104,9 +104,9 @@ def main():
                                    (-1000, 4000, -2000, 2000)]
     plotter.rectangle_colors = 'k'
     new_figsize_list = [(5,5),
-                        (4,4),
-                        (4,4),
-                        (4,4)]
+                        (3.5,3.5),
+                        (3.5,3.5),
+                        (3.5,3.5)]
     new_filename_list = ['zoom_ilelongue',
                          'zoom_port',
                          'zoom_pointepenhir',

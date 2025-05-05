@@ -18,7 +18,7 @@ import personal_tolosa_tools as ptt
 from pathlib import Path
 
 def main():
-    print("\nBeginning script for plotting the ith timestep in the VTK results folder...")
+    print("\nBeginning script for plotting the grid info from the diag.vtk file...")
     
     # Initialize parameters
     current_path = Path.cwd()
@@ -63,10 +63,10 @@ def main():
                                    (-1000, 4000, -2000, 2000)]
     plotter.rectangle_colors = 'k'
     
-    new_figsize_list = [(5,5),
-                        (4,4),
-                        (4,4),
-                        (4,4)]
+    new_figsize_list = [(4,4),
+                        (3.5,3.5),
+                        (3,3),
+                        (3.5,3.5)]
     new_filename_list = ['mesh_zoom_ilelongue',
                          'mesh_zoom_port',
                          'mesh_zoom_pointepenhir',

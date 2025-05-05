@@ -1033,7 +1033,7 @@ class VTKPlotter:
         self.rectangle_colors = rectangle_colors if rectangle_colors is not None else []
         self.rectangle_linewidths = rectangle_linewidths if rectangle_linewidths is not None else []
             
-        if (not os.path.exists(figure_outputdir)) and (not self.figure_no_save):
+        if (not os.path.exists(figure_outputdir)) and (self.figure_save):
             os.makedirs(figure_outputdir)
             
             
