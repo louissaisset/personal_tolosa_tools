@@ -22,6 +22,18 @@ from copy import deepcopy
 import matplotlib as mpl
 mpl.use('agg')
 
+if not os.uname()[1].startswith('belenos'):
+    import matplotlib.pyplot as plt
+    # Paramètres d'affichage pour que ce soit toujours plus propre
+    plt.rcParams["font.family"] = "cmr10"
+    plt.rcParams["font.size"] = 8
+    plt.rcParams['mathtext.fontset'] = "custom"
+    plt.rcParams['mathtext.rm'] = "cmr10"
+    plt.rcParams['mathtext.it'] = "cmr10:italic"
+    plt.rcParams['mathtext.bf'] = "cmr10:bold"
+    plt.rcParams['text.usetex'] = True
+    plt.rcParams['axes.formatter.use_mathtext'] = True
+
 import dask
 from dask.distributed import LocalCluster, Client
 
