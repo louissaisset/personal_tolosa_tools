@@ -101,6 +101,27 @@ def main():
     
     print("\nInitializing the data Reader and Plotter")
     
+    
+    # Creating the local cluster
+    if os.uname()[1].startswith('belenos'):
+        cluster = SLURMRunner()
+    else:
+        cluster = LocalCluster(n_workers=8, threads_per_worker=1)
+    
+    # Link the cluster to the client
+    client = Client(cluster)
+    # client.wait_for_workers(1)
+    
+    # Checking for the client to be correctly configured
+    assert client.submit(lambda x : x+1, 10).result() == 11
+    assert client.submit(lambda x : x+1, 20, workers=2).result() == 21
+    
+    
+    
+    ptt.p_ok(f"See client dashboard via dask at: {client.dashboard_link}")
+    
+    
+    
     # Initialize classes
     reader = ptt.VTKDataReader(str(folder))
     
@@ -132,31 +153,14 @@ def main():
     # Keep the original file name in memory
     old_filename = plotter.auto_filename()
     
-    # Creating the local cluster
-    if os.uname()[1].startswith('belenos'):
-        cluster = SLURMRunner()
-    else:
-        cluster = LocalCluster(n_workers=8, threads_per_worker=1)
-    
-    # Link the cluster to the client
-    client = Client(cluster)
-    # client.wait_for_workers(1)
-    
-    # Checking for the client to be correctly configured
-    assert client.submit(lambda x : x+1, 10).result() == 11
-    assert client.submit(lambda x : x+1, 20, workers=2).result() == 21
     
     
-    
-    ptt.p_ok(f"See client dashboard via dask at: {client.dashboard_link}")
+    factor = (5-int(folder.stem.split('_')[1]))**2
     
     
     
     if not os.uname()[1].startswith('belenos'):
         cluster.scale(8)
-    
-    
-    factor = int(folder.stem.split('_')[1])
     
     # Create the delayed task list
     delayed_plot = []
