@@ -157,10 +157,10 @@ def main():
     
     
     
-    if os.uname()[1].startswith('belenos'):
-        cluster.scale(128)
-    else:
-        cluster.scale(8)
+    # if os.uname()[1].startswith('belenos'):
+    #     cluster.scale(128)
+    # else:
+    #     cluster.scale(8)
     
     
     
