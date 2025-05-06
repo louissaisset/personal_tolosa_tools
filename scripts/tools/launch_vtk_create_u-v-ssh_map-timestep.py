@@ -148,13 +148,17 @@ def main():
     assert client.submit(lambda x : x+1, 20, workers=2).result() == 21
     
     
+    
     ptt.p_ok(f"See client dashboard via dask at: {client.dashboard_link}")
+    
     
     
     if os.uname()[1].startswith('belenos'):
         cluster.scale(8)
     else:
         cluster.scale(128)
+    
+    
     
     # Create the delayed task list
     delayed_plot = []
