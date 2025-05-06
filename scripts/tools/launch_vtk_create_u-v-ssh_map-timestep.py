@@ -102,26 +102,6 @@ def main():
     print("\nInitializing the data Reader and Plotter")
     
     
-    # Creating the local cluster
-    if os.uname()[1].startswith('belenos'):
-        cluster = SLURMRunner()
-    else:
-        cluster = LocalCluster(n_workers=8, threads_per_worker=1)
-    
-    # Link the cluster to the client
-    client = Client(cluster)
-    # client.wait_for_workers(1)
-    
-    # Checking for the client to be correctly configured
-    assert client.submit(lambda x : x+1, 10).result() == 11
-    assert client.submit(lambda x : x+1, 20, workers=2).result() == 21
-    
-    
-    
-    ptt.p_ok(f"See client dashboard via dask at: {client.dashboard_link}")
-    
-    
-    
     # Initialize classes
     reader = ptt.VTKDataReader(str(folder))
     
@@ -156,11 +136,25 @@ def main():
     
     # Define some density factor of the quivers from the BC types
     factor = (5-int(current_path.stem.split('_')[1]))**2
+    print(factor)
     
     
+    # Creating the local cluster
+    if os.uname()[1].startswith('belenos'):
+        cluster = SLURMRunner()
+    else:
+        cluster = LocalCluster(n_workers=8, threads_per_worker=1)
+    
+    # Link the cluster to the client
+    client = Client(cluster)
     
     if not os.uname()[1].startswith('belenos'):
         cluster.scale(8)
+    
+    # Checking for the client to be correctly configured
+    assert client.submit(lambda x : x+1, 10).result() == 11
+    assert client.submit(lambda x : x+1, 20, workers=2).result() == 21
+    ptt.p_ok(f"See client dashboard via dask at: {client.dashboard_link}")
     
     # Create the delayed task list
     delayed_plot = []
@@ -168,7 +162,7 @@ def main():
         # Create the delayed complete figure
         plotter.figure_title = f"Timestep = {timestep_eval:05d}"
         plotter.figure_filename = '_'.join([old_filename, 'complet', f"{timestep_eval:05d}"])
-        plotter.quiver_spacing = 170//(factor+1)
+        plotter.quiver_spacing = int(170/(factor+1))
         plotter.quiver_scale = 25
         delayed_plot += [plot_data_plotter(deepcopy(reader), 
                                            deepcopy(plotter),
@@ -178,7 +172,7 @@ def main():
         for newplotter, new_filename, new_figsize in zip(plotter.zoomed_plotters, new_filename_list, new_figsize_list):
             newplotter.figure_filename = '_'.join([old_filename, f'{new_filename}', f"{timestep_eval:05d}"])
             newplotter.figure_size = new_figsize
-            newplotter.quiver_spacing = 20//(factor+1)
+            newplotter.quiver_spacing = int(20/(factor+1))
             newplotter.quiver_scale = 15
             delayed_plot += [plot_data_plotter(deepcopy(reader), 
                                                deepcopy(newplotter),
@@ -189,7 +183,7 @@ def main():
                 # Create the delayed complete figure
                 plotter.figure_title = f"Timestep = {t:05d}"
                 plotter.figure_filename = '_'.join([old_filename, 'complet', f"{t:05d}"])
-                plotter.quiver_spacing = 170//(factor+1)
+                plotter.quiver_spacing = int(170/(factor+1))
                 plotter.quiver_scale = 25
                 delayed_plot += [plot_data_plotter(deepcopy(reader), 
                                                    deepcopy(plotter),
@@ -198,7 +192,7 @@ def main():
                 for newplotter, new_filename, new_figsize in zip(plotter.zoomed_plotters, new_filename_list, new_figsize_list):
                     newplotter.figure_filename = '_'.join([old_filename, f'{new_filename}', f"{t:05d}"])
                     newplotter.figure_size = new_figsize
-                    newplotter.quiver_spacing = 20//(factor+1)
+                    newplotter.quiver_spacing = int(20/(factor+1))
                     newplotter.quiver_scale = 15
                     delayed_plot += [plot_data_plotter(deepcopy(reader), 
                                                        deepcopy(newplotter), 
