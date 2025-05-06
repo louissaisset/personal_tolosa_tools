@@ -38,7 +38,8 @@ import dask
 from dask.distributed import Client
 if os.uname()[1].startswith('belenos'):
     # from dask_mpi import initialize
-    from dask_jobqueue.slurm import SLURMRunner
+    # from dask_jobqueue.slurm import SLURMRunner
+    from dask.distributed import LocalCluster
 else:
     from dask.distributed import LocalCluster
     
