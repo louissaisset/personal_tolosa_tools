@@ -154,10 +154,8 @@ def main():
     old_filename = plotter.auto_filename()
     
     
-    print('folder', folder)
-    print('folder stem', folder.stem)
-    print('folder stem split', folder.stem.split('_'))
-    factor = (5-int(folder.stem.split('_')[1]))**2
+    # Define some density factor of the quivers from the BC types
+    factor = (5-int(current_path.stem.split('_')[1]))**2
     
     
     
@@ -171,7 +169,7 @@ def main():
         plotter.figure_title = f"Timestep = {timestep_eval:05d}"
         plotter.figure_filename = '_'.join([old_filename, 'complet', f"{timestep_eval:05d}"])
         plotter.quiver_spacing = 170/factor
-        plotter.quiver_scale = 30
+        plotter.quiver_scale = 25
         delayed_plot += [plot_data_plotter(deepcopy(reader), 
                                            deepcopy(plotter),
                                            timestep_eval)]
@@ -192,7 +190,7 @@ def main():
                 plotter.figure_title = f"Timestep = {t:05d}"
                 plotter.figure_filename = '_'.join([old_filename, 'complet', f"{t:05d}"])
                 plotter.quiver_spacing = 170/factor
-                plotter.quiver_scale = 30
+                plotter.quiver_scale = 25
                 delayed_plot += [plot_data_plotter(deepcopy(reader), 
                                                    deepcopy(plotter),
                                                    t)]
