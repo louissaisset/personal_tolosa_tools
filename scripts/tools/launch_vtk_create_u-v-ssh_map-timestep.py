@@ -135,7 +135,7 @@ def main():
     
     
     # Define some density factor of the quivers from the BC types
-    factor = (5-int(current_path.stem.split('_')[1]))**2
+    factor = (5-int(current_path.stem.split('_')[1]))
     print(factor)
     
     
