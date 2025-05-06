@@ -37,8 +37,8 @@ if not os.uname()[1].startswith('belenos'):
 import dask
 from dask.distributed import Client
 if os.uname()[1].startswith('belenos'):
-    from dask_mpi import initialize
-    # from dask_jobqueue.slurm import SLURMCluster, SLURMRunner
+    # from dask_mpi import initialize
+    from dask_jobqueue.slurm import SLURMCluster#, SLURMRunner
 else:
     from dask.distributed import LocalCluster
     
@@ -134,8 +134,8 @@ def main():
     
     # Creating the local cluster
     if os.uname()[1].startswith('belenos'):
-        initialize()
-        # cluster = SLURMCluster(n_workers=8, threads_per_worker=1)
+        # initialize()
+        cluster = SLURMCluster(processes=1, cores=1)
     else:
         cluster = LocalCluster(n_workers=8, threads_per_worker=1)
     
