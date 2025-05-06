@@ -204,5 +204,7 @@ def main():
     # Ask for the computing and saving of such figures
     dask.compute(*delayed_plot)
     
+    client.shutdown()
+    
 if __name__ == "__main__":
     exit(main())
