@@ -136,12 +136,11 @@ def main():
     
     # Define some density factor of the quivers from the BC types
     factor = (5-int(current_path.stem.split('_')[1]))
-    print(factor)
-    
     
     # Creating the local cluster
     if os.uname()[1].startswith('belenos'):
-        cluster = SLURMRunner()
+        # cluster = SLURMRunner()
+        cluster = LocalCluster(n_workers=128, threads_per_worker=1)
     else:
         cluster = LocalCluster(n_workers=8, threads_per_worker=1)
     
