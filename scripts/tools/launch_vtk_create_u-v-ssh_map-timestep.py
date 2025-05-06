@@ -135,7 +135,7 @@ def main():
     # Creating the local cluster
     if os.uname()[1].startswith('belenos'):
         # initialize()
-        cluster = SLURMCluster(processes=1, cores=1)
+        cluster = SLURMCluster(processes=1, cores=1, memory='2GB')
     else:
         cluster = LocalCluster(n_workers=8, threads_per_worker=1)
     
