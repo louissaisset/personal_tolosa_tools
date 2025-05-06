@@ -168,7 +168,7 @@ def main():
         # Create the delayed complete figure
         plotter.figure_title = f"Timestep = {timestep_eval:05d}"
         plotter.figure_filename = '_'.join([old_filename, 'complet', f"{timestep_eval:05d}"])
-        plotter.quiver_spacing = 170/factor
+        plotter.quiver_spacing = 170//(factor+1)
         plotter.quiver_scale = 25
         delayed_plot += [plot_data_plotter(deepcopy(reader), 
                                            deepcopy(plotter),
@@ -178,7 +178,7 @@ def main():
         for newplotter, new_filename, new_figsize in zip(plotter.zoomed_plotters, new_filename_list, new_figsize_list):
             newplotter.figure_filename = '_'.join([old_filename, f'{new_filename}', f"{timestep_eval:05d}"])
             newplotter.figure_size = new_figsize
-            newplotter.quiver_spacing = 20/factor
+            newplotter.quiver_spacing = 20//(factor+1)
             newplotter.quiver_scale = 15
             delayed_plot += [plot_data_plotter(deepcopy(reader), 
                                                deepcopy(newplotter),
@@ -189,7 +189,7 @@ def main():
                 # Create the delayed complete figure
                 plotter.figure_title = f"Timestep = {t:05d}"
                 plotter.figure_filename = '_'.join([old_filename, 'complet', f"{t:05d}"])
-                plotter.quiver_spacing = 170/factor
+                plotter.quiver_spacing = 170//(factor+1)
                 plotter.quiver_scale = 25
                 delayed_plot += [plot_data_plotter(deepcopy(reader), 
                                                    deepcopy(plotter),
@@ -198,7 +198,7 @@ def main():
                 for newplotter, new_filename, new_figsize in zip(plotter.zoomed_plotters, new_filename_list, new_figsize_list):
                     newplotter.figure_filename = '_'.join([old_filename, f'{new_filename}', f"{t:05d}"])
                     newplotter.figure_size = new_figsize
-                    newplotter.quiver_spacing = 20/factor
+                    newplotter.quiver_spacing = 20//(factor+1)
                     newplotter.quiver_scale = 15
                     delayed_plot += [plot_data_plotter(deepcopy(reader), 
                                                        deepcopy(newplotter), 
