@@ -144,7 +144,7 @@ def main():
     
     # Link the cluster to the client
     client = Client(cluster)
-    client.wait_for_workers(1)
+    # client.wait_for_workers(1)
     
     # Checking for the client to be correctly configured
     assert client.submit(lambda x : x+1, 10).result() == 11
