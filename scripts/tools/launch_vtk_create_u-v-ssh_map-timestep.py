@@ -38,7 +38,7 @@ import dask
 from dask.distributed import Client
 if os.uname()[1].startswith('belenos'):
     # from dask_mpi import initialize
-    from dask_jobqueue.slurm import SLURMCluster#, SLURMRunner
+    from dask_jobqueue.slurm import SLURMCluster, SLURMRunner
 else:
     from dask.distributed import LocalCluster
     
@@ -135,10 +135,11 @@ def main():
     # Creating the local cluster
     if os.uname()[1].startswith('belenos'):
         # initialize()
-        cluster = SLURMCluster(cores=1,
-                               memory='2GB',
-                               account='saissetl',
-                               queue='normal256')
+        # cluster = SLURMCluster(cores=1,
+        #                        memory='2GB',
+        #                        account='saissetl',
+        #                        queue='normal256')
+        cluster = SLURMRunner()
     else:
         cluster = LocalCluster(n_workers=8, threads_per_worker=1)
     
