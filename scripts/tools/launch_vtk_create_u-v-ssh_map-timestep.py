@@ -22,21 +22,26 @@ from copy import deepcopy
 import matplotlib as mpl
 mpl.use('agg')
 
+import matplotlib.pyplot as plt
+# Paramètres d'affichage pour que ce soit toujours plus propre
+plt.rcParams["font.family"] = "cmr10"
+plt.rcParams["font.size"] = 8
 if not os.uname()[1].startswith('belenos'):
-    import matplotlib.pyplot as plt
-    # Paramètres d'affichage pour que ce soit toujours plus propre
-    plt.rcParams["font.family"] = "cmr10"
-    plt.rcParams["font.size"] = 8
+    plt.rcParams['text.usetex'] = True
+    plt.rcParams['axes.formatter.use_mathtext'] = True
     plt.rcParams['mathtext.fontset'] = "custom"
     plt.rcParams['mathtext.rm'] = "cmr10"
     plt.rcParams['mathtext.it'] = "cmr10:italic"
     plt.rcParams['mathtext.bf'] = "cmr10:bold"
-    plt.rcParams['text.usetex'] = True
-    plt.rcParams['axes.formatter.use_mathtext'] = True
 
 import dask
-from dask.distributed import LocalCluster, Client
-
+from dask.distributed import Client
+if os.uname()[1].startswith('belenos'):
+    from dask_mpi import initialize
+    # from dask_jobqueue.slurm import SLURMCluster, SLURMRunner
+else:
+    from dask.distributed import LocalCluster
+    
 @dask.delayed
 def plot_data_plotter(reader, plotter, t):
 
@@ -115,9 +120,9 @@ def main():
                                    (-17000, -12000, -10000, -5000), 
                                    (-1000, 4000, -2000, 2000)]
     plotter.rectangle_colors = 'k'
-    new_figsize_list = [(5,5),
+    new_figsize_list = [(4,4),
                         (3.5,3.5),
-                        (3.5,3.5),
+                        (3,3),
                         (3.5,3.5)]
     new_filename_list = ['zoom_ilelongue',
                          'zoom_port',
@@ -127,9 +132,22 @@ def main():
     # Keep the original file name in memory
     old_filename = plotter.auto_filename()
     
-    # Creating the local cluster and client 
-    cluster = LocalCluster(n_workers=8, threads_per_worker=1)
+    # Creating the local cluster
+    if os.uname()[1].startswith('belenos'):
+        initialize()
+        # cluster = SLURMCluster(n_workers=8, threads_per_worker=1)
+    else:
+        cluster = LocalCluster(n_workers=8, threads_per_worker=1)
+    
+    # Link the cluster to the client
     client = Client(cluster)
+    client.wait_for_workers()
+    
+    # Checking for the client to be correctly configured
+    assert client.submit(lambda x : x+1, 10).result() == 11
+    assert client.submit(lambda x : x+1, 20, workers=2).result() == 211
+    
+    
     ptt.p_ok(f"See client dashboard via dask at: {client.dashboard_link}")
     cluster.scale(16)
     

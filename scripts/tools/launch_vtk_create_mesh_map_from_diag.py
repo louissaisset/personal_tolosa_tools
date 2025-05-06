@@ -15,17 +15,20 @@ os.environ['PATH'] += os.pathsep +  os.path.expanduser(f'{path_tolosa_path}/scri
 sys.path.append(os.path.expanduser(path_tolosa_path))
 import personal_tolosa_tools as ptt
 
+import matplotlib as mpl
+mpl.use('agg')
+
+import matplotlib.pyplot as plt
+# Paramètres d'affichage pour que ce soit toujours plus propre
+plt.rcParams["font.family"] = "cmr10"
+plt.rcParams["font.size"] = 8
 if not os.uname()[1].startswith('belenos'):
-    import matplotlib.pyplot as plt
-    # Paramètres d'affichage pour que ce soit toujours plus propre
-    plt.rcParams["font.family"] = "cmr10"
-    plt.rcParams["font.size"] = 8
+    plt.rcParams['text.usetex'] = True
+    plt.rcParams['axes.formatter.use_mathtext'] = True
     plt.rcParams['mathtext.fontset'] = "custom"
     plt.rcParams['mathtext.rm'] = "cmr10"
     plt.rcParams['mathtext.it'] = "cmr10:italic"
     plt.rcParams['mathtext.bf'] = "cmr10:bold"
-    plt.rcParams['text.usetex'] = True
-    plt.rcParams['axes.formatter.use_mathtext'] = True
 
 from pathlib import Path
 

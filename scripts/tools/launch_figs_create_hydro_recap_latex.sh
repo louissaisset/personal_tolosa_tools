@@ -3,20 +3,31 @@
 echo -e "\nLaunching the tool for creating latex files from folder architecture..."
 
 # Récupérer les dossiers qui suivent le motif ./Figures_BC_*
-dossiers=(./Figures_BC_*)
-echo -e "       \e[32mOK:\e[0m Asked for folders: ${dossiers}"
-
-# Type de fichier
-type_fichier='pdf'
-echo -e "       \e[32mOK:\e[0m Asked for figures in format: ${type_fichier}"
+dossiers=("Figures_BC_0_constraint_all_algo_5_smoothing_00500m")
 
 # Noms des types de données à grouper
-donnees=("mesh" "bathy" "radiusratio" "resolution")
-echo -e "       \e[32mOK:\e[0m Asked for datas: ${donnees}"
+donnees=("ssh_u_v")
 
 # Noms des zones à afficher
 zones=("complet" "zoom_ilelongue" "zoom_pointepenhir" "zoom_port" "zoom_bassinest")
+
+# noms des pas de temps à conserver
+tstart=0
+tstop=99
+tstep=1
+timesteps=$(seq -f "%05g" $tstart $tstep $tstop)
+
+# Type de fichier
+type_fichier='png'
+
+
+
+echo -e "       \e[32mOK:\e[0m Asked for folders: ${dossiers}"
+echo -e "       \e[32mOK:\e[0m Asked for figures in format: ${type_fichier}"
+echo -e "       \e[32mOK:\e[0m Asked for datas: ${donnees}"
 echo -e "       \e[32mOK:\e[0m Asked for zones: ${zones}"
+echo -e "       \e[32mOK:\e[0m Asked for time range: ${tstart} ${tstep} ${tstop}"
+
 
 
 # Début de la boucle sur les données
@@ -40,7 +51,7 @@ cat << 'EOF' > $output_file
 % ADD RED AND BLUE STAMPS FOR DRSF DOCUMENTS
 % \makeDRSF
 
-\usepackage{lipsum}
+
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%%%%%%%%%%%%%%%%%%%%%% START OF DOCUMENT %%%%%%%%%%%%%%%%%%%%%%%
@@ -67,14 +78,14 @@ cat << 'EOF' > $output_file
 
 \begin{table}[!ht]
 \begin{tabular}{llp{15cm}}
-\textbf{OBJET}              & : & Récapitulatif exhaustif des résultats de la simulation\\
+\textbf{OBJET}              & : & Récapitulatif exhaustif des caractéristiques des maillages utilisés\\
 \end{tabular}
 \end{table}
 
 
 \section*{Abstract}
 
-Document d'annexe présentant les caractéristiques d'un maillage spécifique
+Document d'annexe présentant les caractéristiques des maillages pour une série de configurations numériques
 
 
 
@@ -84,6 +95,8 @@ Document d'annexe présentant les caractéristiques d'un maillage spécifique
 
 \clearpage
 \restoregeometry       % Apply original page geometry for subsequent pages
+
+\listoffigures
 EOF
 
 
@@ -94,11 +107,15 @@ for dossier in "${dossiers[@]}"; do
 if [ -d "$dossier" ]; then
 echo -e "       \e[32mOK:\e[0m ${dossier}"
 
+# Début de la boucle sur les pas de temps
+for timestep in $timesteps; do
+
 # Ajout du header pour une figure sur une nouvelle page
 cat << EOF >> $output_file
 
 \newpage
-\begin{figure}[htbp]
+\noindent\makebox[\linewidth]{%
+\begin{minipage}{20cm}
     \centering
 EOF
 
@@ -107,7 +124,7 @@ EOF
 for zone in "${zones[@]}"; do
 
 # Définition du chemin de la figure
-fichier=${dossier}/${donnee}_${zone}.${type_fichier}
+fichier=${dossier}/${donnee}_${zone}_${timestep}.${type_fichier}
 
 # Vérification de l'existence du fichier
 if [ -e "${fichier}" ]; then
@@ -121,21 +138,24 @@ EOF
 # Si le fichier n'existe pas il est passé 
 else
 echo -e "  \e[33mWARNING:\e[0m File not found: $fichier"
-
 fi
 
 # Sortie de la boucle sur les zones
 done
 
-
 # Remplacer les underscores par \_ dans le nom du dossier pour le caption
-dossier_caption="${dossier//_/\\_}"
+dossier_caption="${dossier//_/\\_\\-}"
 
 # Ajouter le caption de la figure au fichier LaTeX
 cat << EOF >> $output_file
-    \caption{Figures de $dossier_caption}
-\end{figure}
+    \captionof{figure}{Figures de $dossier_caption}
+\end{minipage}%
+}
 EOF
+
+# Sortie de la boucle sur les pas de temps
+done
+
 fi
 
 # Sortie de la boucle sur les dossiers

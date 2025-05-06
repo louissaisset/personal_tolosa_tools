@@ -5,14 +5,14 @@ echo -e "\nLaunching the tool for creating latex files from folder architecture.
 # Récupérer les dossiers qui suivent le motif ./Figures_BC_*
 dossiers=(./*/BC_*/Figures_BC_*)
 
-# Type de fichier
-type_fichier='pdf'
-
 # Noms des types de données à grouper
 donnees=("mesh" "bathy" "radiusratio" "resolution")
 
 # Noms des zones à afficher
 zones=("complet" "zoom_ilelongue" "zoom_pointepenhir" "zoom_port" "zoom_bassinest")
+
+# Type de fichier
+type_fichier='pdf'
 
 echo -e "       \e[32mOK:\e[0m Asked for folders: ${dossiers}"
 echo -e "       \e[32mOK:\e[0m Asked for figures in format: ${type_fichier}"
@@ -133,7 +133,7 @@ fi
 done
 
 
-# Remplacer les underscores par \_ dans le nom du dossier pour le caption
+# Remplacer les underscores par \_\- dans le nom du dossier pour le caption
 dossier_caption="${dossier//_/\\_\\-}"
 
 # Ajouter le caption de la figure au fichier LaTeX
