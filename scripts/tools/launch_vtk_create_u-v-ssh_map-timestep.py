@@ -154,7 +154,9 @@ def main():
     old_filename = plotter.auto_filename()
     
     
-    
+    print('folder', folder)
+    print('folder stem', folder.stem)
+    print('folder stem split', folder.stem.split('_'))
     factor = (5-int(folder.stem.split('_')[1]))**2
     
     
