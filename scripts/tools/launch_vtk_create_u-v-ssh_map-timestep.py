@@ -135,13 +135,16 @@ def main():
     # Creating the local cluster
     if os.uname()[1].startswith('belenos'):
         # initialize()
-        cluster = SLURMCluster(processes=1, cores=1, memory='2GB')
+        cluster = SLURMCluster(cores=1,
+                               memory='2GB',
+                               account='saissetl',
+                               queue='normal256')
     else:
         cluster = LocalCluster(n_workers=8, threads_per_worker=1)
     
     # Link the cluster to the client
     client = Client(cluster)
-    client.wait_for_workers()
+    client.wait_for_workers(1)
     
     # Checking for the client to be correctly configured
     assert client.submit(lambda x : x+1, 10).result() == 11
