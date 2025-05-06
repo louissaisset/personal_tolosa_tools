@@ -24,9 +24,9 @@ mpl.use('agg')
 
 import matplotlib.pyplot as plt
 # Paramètres d'affichage pour que ce soit toujours plus propre
-plt.rcParams["font.family"] = "cmr10"
 plt.rcParams["font.size"] = 8
 if not os.uname()[1].startswith('belenos'):
+    plt.rcParams["font.family"] = "cmr10"
     plt.rcParams['text.usetex'] = True
     plt.rcParams['axes.formatter.use_mathtext'] = True
     plt.rcParams['mathtext.fontset'] = "custom"
