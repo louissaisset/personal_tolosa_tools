@@ -149,7 +149,12 @@ def main():
     
     
     ptt.p_ok(f"See client dashboard via dask at: {client.dashboard_link}")
-    cluster.scale(16)
+    
+    
+    if os.uname()[1].startswith('belenos'):
+        cluster.scale(8)
+    else:
+        cluster.scale(128)
     
     # Create the delayed task list
     delayed_plot = []
