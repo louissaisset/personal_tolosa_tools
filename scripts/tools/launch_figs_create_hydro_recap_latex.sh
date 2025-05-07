@@ -3,7 +3,8 @@
 echo -e "\nLaunching the tool for creating latex files from folder architecture..."
 
 # Récupérer les dossiers qui suivent le motif ./Figures_BC_*
-dossiers=("Figures_BC_0_constraint_all_algo_5_smoothing_00500m")
+dossiers=("./*/BC_5*/Fig*/")
+echo $dossiers
 
 # Noms des types de données à grouper
 donnees=("ssh_u_v")
@@ -101,7 +102,7 @@ EOF
 
 
 # Début de la boucle sur les dossiers
-for dossier in "${dossiers[@]}"; do
+for dossier in $dossiers; do
 
 # Vérifier si l'élément est un dossier
 if [ -d "$dossier" ]; then
@@ -148,7 +149,7 @@ dossier_caption="${dossier//_/\\_\\-}"
 
 # Ajouter le caption de la figure au fichier LaTeX
 cat << EOF >> $output_file
-    \captionof{figure}{Figures de $dossier_caption}
+    \captionof{figure}{Pas de temps ${timestep} de la simulation $dossier_caption}
 \end{minipage}%
 }
 EOF

@@ -6,9 +6,13 @@ Created on Fri Feb 21 13:56:34 2025
 @author: llsaisset
 """
 
-
 import sys, os
-sys.path.append(os.path.expanduser("~/DATA/Scripts/personal_tolosa_tools/"))
+if os.uname()[1].startswith('belenos'):
+    path_tolosa_path = "~/SAVE/DATA/Scripts/personal_tolosa_tools/"
+else:
+    path_tolosa_path = "~/DATA/Scripts/personal_tolosa_tools/"
+os.environ['PATH'] += os.pathsep +  os.path.expanduser(f'{path_tolosa_path}/scripts/tools/')
+sys.path.append(os.path.expanduser(path_tolosa_path))
 import personal_tolosa_tools as ptt
 
 from pathlib import Path
@@ -18,6 +22,18 @@ from copy import deepcopy
 import matplotlib as mpl
 mpl.use('agg')
 
+import matplotlib.pyplot as plt
+# Paramètres d'affichage pour que ce soit toujours plus propre
+plt.rcParams["font.size"] = 8
+if not os.uname()[1].startswith('belenos'):
+    plt.rcParams["font.family"] = "cmr10"
+    plt.rcParams['text.usetex'] = True
+    plt.rcParams['axes.formatter.use_mathtext'] = True
+    plt.rcParams['mathtext.fontset'] = "custom"
+    plt.rcParams['mathtext.rm'] = "cmr10"
+    plt.rcParams['mathtext.it'] = "cmr10:italic"
+    plt.rcParams['mathtext.bf'] = "cmr10:bold"
+    
 import numpy as np
 
 import time
@@ -60,15 +76,15 @@ def main():
     BCtype = 'some_description'
     
     # Read args and kwargs
-    parser = argparse.ArgumentParser(description='Process VTK folder and timestep parameters')
-    parser.add_argument('args', nargs='*', help='Positional arguments: folder1, folder2, datatype, xreso, yreso, timestep')
+    parser = argparse.ArgumentParser(description='Some script plotting the differences in the results of the ith timestep for two folders, unsig an interpolation of the results over a common regular grid.')
+    parser.add_argument('args', nargs='*', help='Positional arguments: folder1, folder2, data_key, timestep, maxval, xreso, yreso, BCtype')
     parser.add_argument('--folder1', dest='folder1', default=None, help='Folder parameter as kwarg')
     parser.add_argument('--folder2', dest='folder2', default=None, help='Folder parameter as kwarg')
     parser.add_argument('--data_key', dest='data_key', default=None, help='Type of data to compare as kwarg')
     parser.add_argument('--timestep', dest='timestep', default=None, help='Timestep parameter as kwarg')
     parser.add_argument('--xreso', dest='xreso', default=None, help='X resolution of the comparison grid as kwarg')
     parser.add_argument('--yreso', dest='yreso', default=None, help='Y resolution of the comparison grid as kwarg')
-    parser.add_argument('--BCtype', dest='BCtype', default=None, help='Some decription of the BC that are compared')
+    parser.add_argument('--BCtype', dest='BCtype', default=None, help='Some description of the BC that are compared (for the figure names)')
     args = parser.parse_args()
     
     # Process positional args if provided

@@ -31,6 +31,7 @@ if not os.uname()[1].startswith('belenos'):
     plt.rcParams['mathtext.bf'] = "cmr10:bold"
 
 from pathlib import Path
+import argparse
 
 def main():
     print("\nBeginning script for plotting the grid info from the diag.vtk file...")
@@ -39,13 +40,14 @@ def main():
     current_path = Path.cwd()
     ptt.p_ok(f"Launched from : {current_path}")
     
+    
+    # Read args and kwargs
+    parser = argparse.ArgumentParser(description="A small python script to generate matplotlib figures of a tolosa mesh using the informations of the first '.vtk' file found inside the current path")
+    # Parse arguments
+    args = parser.parse_args()
+    
     # Initialize classes
     reader = ptt.VTKDataReader(current_path)
-    # vtk_file = [f for f in reader._get_vtk_files() if f.endswith("_diag.vtk")][0]
-    # ptt.p_ok(f"Asking for file : {vtk_file}")
-    # if not vtk_file:
-    #     ptt.p_error("Cannot proceed without a valid '_diag.vtk' file")
-    #     return 1
     
     output_dir = (current_path / f'Figures_{current_path.name}').resolve()
     ptt.p_ok(f"Defined Figure folder : {output_dir}")

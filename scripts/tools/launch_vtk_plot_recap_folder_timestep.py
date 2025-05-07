@@ -35,13 +35,7 @@ if not os.uname()[1].startswith('belenos'):
     plt.rcParams['mathtext.bf'] = "cmr10:bold"
 
 import dask
-from dask.distributed import Client
-if os.uname()[1].startswith('belenos'):
-    # from dask_mpi import initialize
-    # from dask_jobqueue.slurm import SLURMRunner
-    from dask.distributed import LocalCluster
-else:
-    from dask.distributed import LocalCluster
+from dask.distributed import LocalCluster, Client
     
 @dask.delayed
 def plot_data_plotter(reader, plotter, t):
@@ -61,14 +55,14 @@ def main():
     ptt.p_ok(f"Launched from : {current_path}")
     
     # Initialize with default values
-    timestep = ''
     folder = current_path
+    timestep = ''
     
     # Read args and kwargs
-    parser = argparse.ArgumentParser(description='Process VTK folder and timestep parameters')
+    parser = argparse.ArgumentParser(description='Small python script to plot an hydrodynamic recap of the i-th timestep')
     parser.add_argument('args', nargs='*', help='Positional arguments: folder, timestep')
-    parser.add_argument('--folder', dest='folder', default=None, help='Folder parameter as kwarg')
-    parser.add_argument('--timestep', dest='timestep', default=None, help='Timestep parameter as kwarg')
+    parser.add_argument('-f', '--folder', dest='folder', default=None, help='Folder parameter as kwarg. Should be an existing relative or global path declared as str')
+    parser.add_argument('-t', '--timestep', dest='timestep', default=None, help='Timestep parameter as kwarg. Should be an int or any iterable declared as a string for eval(timestep)')
     
     args = parser.parse_args()
     
@@ -110,7 +104,7 @@ def main():
     plotter = ptt.VTKPlotter(output_dir)
     plotter.figsize = (3,3)
     plotter.figure_tickfontsize = 5
-    plotter.pcolor_max = 1
+    plotter.pcolor_max = 3
     plotter.pcolor_min = -plotter.pcolor_max
     plotter.contour_key = ''
     # plotter.contour_fontsize = 4
