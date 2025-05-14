@@ -1,10 +1,30 @@
 #!/bin/bash
 
+# Function to display help information
+display_help() {
+    cat << EOF
+Usage: $0 [OPTIONS]
+
+Options:
+  -h, --help               Display this help message and exit.
+  -f, --dossiers           List of directories to process. Default: (${dossiers[@]})
+  -d, --donnees            List of data files to process. Default: (${donnees[@]})
+  -z, --zones              List of zones to process. Default: (${zones[@]})
+  -ti, --tstart            Start time for processing. Default: $tstart
+  -tf, --tstop             Stop time for processing. Default: $tstop
+  -ts, --tstep             Time step for processing. Default: $tstep
+  --type_fichier           Type of file to process.
+
+Examples:
+  $0 -f dir1 dir2 --donnees data1 data2 -z zone1 zone2 -ti 0 -tf 100 -ts 10 --type_fichier csv
+  $0 --dossiers dir1 --donnees data1 --zones zone1 --tstart 0 --tstop 100 --tstep 10 --type_fichier csv
+EOF
+}
+
 echo -e "\nLaunching the tool for creating latex files from folder architecture..."
 
 # Récupérer les dossiers qui suivent le motif ./Figures_BC_*
-dossiers=("./*/BC_5*/Fig*/")
-echo $dossiers
+dossiers=("./Fig*")
 
 # Noms des types de données à grouper
 donnees=("ssh_u_v")
@@ -16,18 +36,81 @@ zones=("complet" "zoom_ilelongue" "zoom_pointepenhir" "zoom_port" "zoom_bassines
 tstart=0
 tstop=99
 tstep=1
-timesteps=$(seq -f "%05g" $tstart $tstep $tstop)
 
 # Type de fichier
 type_fichier='png'
 
+# Check if -h or --help is in the arguments
+for arg in "$@"; do
+    if [[ "$arg" == "-h" || "$arg" == "--help" ]]; then
+        display_help
+        exit 0
+    fi
+done
+
+# Gérer la déclaration d'arguments spécifiques
+while [[ $# -gt 0 ]]; do
+  case $1 in
+    -h|--help)
+       display_help
+       exit 0
+       ;;
+    -f|--dossiers)
+      shift
+      dossiers=()
+      while [[ $# -gt 0 && "$1" != -* ]]; do
+        dossiers+=("$1")
+        shift
+      done
+      ;;
+    -d|--donnees)
+      shift
+      donnees=()
+      while [[ $# -gt 0 && "$1" != -* ]]; do
+        donnees+=("$1")
+        shift
+      done
+      ;;
+    -z|--zones)
+      shift
+      zones=()
+      while [[ $# -gt 0 && "$1" != -* ]]; do
+        zones+=("$1")
+        shift
+      done
+      ;;
+    -ti|--tstart)
+      tstart="$2"
+      shift 2
+      ;;
+    -tf|--tstop)
+      tstop="$2"
+      shift 2
+      ;;
+    -ts|--tstep)
+      tstep="$2"
+      shift 2
+      ;;
+    --type_fichier)
+      type_fichier="$2"
+      shift 2
+      ;;
+    *)
+      echo "Invalid option: -$1" 
+      exit 1
+      ;;
+  esac
+done
+
+
+timesteps=$(seq -f "%05g" $tstart $tstep $tstop)
 
 
 echo -e "       \e[32mOK:\e[0m Asked for folders: ${dossiers}"
-echo -e "       \e[32mOK:\e[0m Asked for figures in format: ${type_fichier}"
 echo -e "       \e[32mOK:\e[0m Asked for datas: ${donnees}"
 echo -e "       \e[32mOK:\e[0m Asked for zones: ${zones}"
 echo -e "       \e[32mOK:\e[0m Asked for time range: ${tstart} ${tstep} ${tstop}"
+echo -e "       \e[32mOK:\e[0m Asked for figures in format: ${type_fichier}"
 
 
 
