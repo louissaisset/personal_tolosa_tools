@@ -1,117 +1,130 @@
-#!/bin/csh
+#!/bin/bash
 
-echo "\nBeginning the creation of wind and pressure forcing files using grib2tolosa..."
+# Script for grib2tolosa_mpi processing
 
-# Définir le chemin vers le répertoire cini
-set path_grib2tolosa = '~/SOFTS/config_prep_tools/grib2tolosa/'
-echo "       \e[32mOK:\e[0m Assumed path to cini: $path_cini"
+# Default values
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+WORKING_DIR=$(pwd)
+GRIB2TOLOSA_PATH=~/SOFTS/grib2tolosa/grib2tolosa_mpi  # Default path - Replace with actual path
+DEFAULT_GRIB_FILE=~/DATA/CONFIG_DATA/grib/ATL/20090121000000_20090126230000_AROME_1h_0.01deg.tar  # Default grib file path
+OUTPUT_PATH="${WORKING_DIR}"
+MESH_FILE=""
+GRIB_FILE=""
 
-# Charger le module nécessaire
-#source /usr/share/Modules/3.2.10/init/csh
-#module load intel-fc-20/19.1.3
-#echo "       \e[32mOK:\e[0m Loaded modules: intel-fc-20/19.1.3"
-
-# Sauvegarder le chemin de départ
-set start_path = $cwd
-echo "       \e[32mOK:\e[0m Selected folder: $start_path"
-
-
-# Check if an argument was provided
-if ($#argv >= 1) then
-    # Argument was provided, check if it exists and is a file
-    if (-f "$1") then
-        
-        # Convert to absolute path
-        set absolutePathmsh = `realpath "$1"`
-        echo "       \e[32mOK:\e[0m Using provided file: $absolutePathmsh"
-        
-    else
-        echo "    \e[31mERROR:\e[0m File does not exist : $1"
-        echo "    \e[31mERROR:\e[0m Cannot proceed without either no argument or an existing .msh file"
-        exit 1
-    endif
-else
-    # Vérifier l'existence d'un fichier .msh dans le dossier
-    if (! `ls *.msh >& /dev/null; echo $status`) then
-    
-        # Ajout d'un warning si de multiples fichiers .msh existent dans le dossier
-        set txtCount = `find . -maxdepth 1 -name "*.msh" -type f | wc -l`
-        if ($txtCount > 1) then
-            echo "  \e[33mWARNING:\e[0m Multiple .msh files found"
-        endif
-        
-        # Utilisation de find pour récupérer seulement le premier fichier .msh
-        set firstmshFile = `find . -maxdepth 1 -name "*.msh" -type f | sort | head -1`
-        
-        # Si il y a au moins un fichier .msh
-        if ("$firstmshFile" != "") then
-            
-            # Récupération du chemin absolu
-            set absolutePathmsh = `realpath "$firstmshFile"`
-            echo "       \e[32mOK:\e[0m Found .msh file: $absolutePathmsh"
-    
-        else
-            echo "    \e[31mERROR:\e[0m No .msh files found in the current directory."
-            echo "    \e[31mERROR:\e[0m Cannot proceed without either no argument or an existing .msh file"
-            exit 1
-        endif
-    else
-        echo "    \e[31mERROR:\e[0m No .msh files found in the current directory."
-        echo "    \e[31mERROR:\e[0m Cannot proceed without either no argument or an existing .msh file"
-        exit 1
-    endif
-endif
-
-
-
-# Vérifier l'existence d'un fichier regional.depth-ele.a dans le dossier
-if (! `ls regional.depth-ele.a >& /dev/null; echo $status`) then
-
-    # Récupération du chemin absolu
-    set absolutePathregional = `realpath ./regional.depth-ele.a`
-    echo "       \e[32mOK:\e[0m Found regional.depth-ele.a: $absolutePathregional"
-
-else
-    echo "    \e[31mERROR:\e[0m No regional.depth-ele.a files found in the current directory."
+# Function to display usage information
+usage() {
+    echo "Usage: $0 [options]"
+    echo "Options:"
+    echo "  -m <path>      Path to mesh file (*_latlong.msh) - if not provided, will use first *_latlong.msh file in working directory"
+    echo "  -g <path>      Path to grib file (default: $DEFAULT_GRIB_FILE)"
+    echo "  -p <path>      Path to grib2tolosa_mpi executable (default: $GRIB2TOLOSA_PATH)"
+    echo "  -o <path>      Output directory for processed files (default: current directory)"
+    echo "  -h             Display this help message"
     exit 1
-endif
+}
 
-# Création des liens symboliques
-ln -sf $absolutePathmsh $path_cini/input.msh
-echo "       \e[32mOK:\e[0m Added .msh file symbolic link to $path_cini/input.msh "
-ln -sf ${start_path}/regional.depth-ele.a $path_cini/regional.depth.a
-echo "       \e[32mOK:\e[0m Added regional.depth-ele.a file symbolic link to $path_cini/regional.depth.a"
+# Parse command line arguments
+while getopts "m:g:p:o:h" opt; do
+    case $opt in
+        m) MESH_FILE="$OPTARG" ;;
+        g) GRIB_FILE="$OPTARG" ;;
+        p) GRIB2TOLOSA_PATH="$OPTARG" ;;
+        o) OUTPUT_PATH="$OPTARG" ;;
+        h) usage ;;
+        *) usage ;;
+    esac
+done
 
+# Handle mesh file - if not provided, use first *_latlong.msh file in working directory
+if [ -z "$MESH_FILE" ]; then
+    MESH_FILE=$(find "$WORKING_DIR" -maxdepth 1 -name "*_latlong.msh" | head -n 1)
+    if [ -z "$MESH_FILE" ]; then
+        echo "Error: No *_latlong.msh file found in current directory. Please provide a mesh file with -m option."
+        exit 1
+    fi
+    echo "Using mesh file: $MESH_FILE"
+fi
 
+# Ensure mesh file exists
+if [ ! -f "$MESH_FILE" ]; then
+    echo "Error: Mesh file $MESH_FILE does not exist"
+    exit 1
+fi
 
-echo "\nBeginning the creation of initialisation files..."
+# Convert to absolute path
+MESH_FILE=$(realpath "$MESH_FILE")
 
-# Déplacement vers le dossier contenant l'outil cini
-cd $path_cini
-echo "       \e[32mOK:\e[0m Moved to $path_cini"
+# Handle grib file - if not provided, use default path
+if [ -z "$GRIB_FILE" ]; then
+    GRIB_FILE="$DEFAULT_GRIB_FILE"
+    echo "Using default grib file: $GRIB_FILE"
+fi
 
-# Création des fichiers d'initialisation
-echo "       \e[32mOK:\e[0m Launched cini using ./inicon"
-./inicon
-echo "       \e[32mOK:\e[0m End of cini tool"
+# Ensure grib file exists
+if [ ! -f "$GRIB_FILE" ]; then
+    echo "Error: Grib file $GRIB_FILE does not exist"
+    exit 1
+fi
 
-cd $start_path
-echo "       \e[32mOK:\e[0m Moved back to $start_path"
+# Convert to absolute path
+GRIB_FILE=$(realpath "$GRIB_FILE")
 
-set resfiles = `ls $path_cini/rest_*`
-echo "       \e[32mOK:\e[0m Initialisation files created by cini: $resfiles"
+# Extract the directory containing the grib2tolosa_mpi executable
+GRIB2TOLOSA_DIR=$(dirname "$GRIB2TOLOSA_PATH")
 
-sleep 5
+# Create output directory if it doesn't exist
+mkdir -p "$OUTPUT_PATH"
+OUTPUT_PATH=$(realpath "$OUTPUT_PATH")
 
+# Clean up any existing symbolic links in the grib2tolosa directory
+echo "Cleaning up grib2tolosa directory..."
+echo BEFORE
+ls $GRIB2TOLOSA_DIR
+if [ -d "$GRIB2TOLOSA_DIR" ]; then
+    rm -f "${GRIB2TOLOSA_DIR}"/input.msh "${GRIB2TOLOSA_DIR}"/input.grb
+    rm "${GRIB2TOLOSA_DIR}"/forcing*.a "${GRIB2TOLOSA_DIR}"/forcing*.b
+else
+    echo "Error: grib2tolosa directory $GRIB2TOLOSA_DIR does not exist"
+    exit 1
+fi
 
+echo AFTER 
+ls $GRIB2TOLOSA_DIR
 
-echo "\nBeginning the copy of initialisation files into the original folder..."
+# Create symbolic links to mesh and grib files
+echo "Creating symbolic links to mesh and grib files..."
+ln -sf "$MESH_FILE" "${GRIB2TOLOSA_DIR}/input.msh"
+ln -sf "$GRIB_FILE" "${GRIB2TOLOSA_DIR}/input.grb"
 
-# Copier les fichiers résultants et revenir au répertoire initial
-cp $path_cini/rest_* $start_path
-echo "       \e[32mOK:\e[0m Copied files to current folder"
+# Change to grib2tolosa directory
+echo "Changing to grib2tolosa directory: $GRIB2TOLOSA_DIR"
+pushd "$GRIB2TOLOSA_DIR" > /dev/null
 
-# Décharger tous les modules
-module purge
-echo "       \e[32mOK:\e[0m Purged all modules"
+# Run grib2tolosa_mpi
+echo "Running grib2tolosa_mpi..."
+echo "$GRIB2TOLOSA_PATH 3 0.028"
+./$(basename "$GRIB2TOLOSA_PATH 3 0.028")
 
+# Check if the command was successful
+if [ $? -ne 0 ]; then
+    echo "Error: grib2tolosa_mpi execution failed"
+    popd > /dev/null
+    exit 1
+fi
+
+# Copy all resulting forcing.* files back to the output directory
+echo "Copying resulting files to output directory: $OUTPUT_PATH"
+cp -f forcing.* "$OUTPUT_PATH/"
+
+# Return to original directory
+popd > /dev/null
+
+# Clean up symbolic links
+echo "Cleaning up symbolic links..."
+rm -f "${GRIB2TOLOSA_DIR}/input.msh" "${GRIB2TOLOSA_DIR}/input.grb"
+
+# Clean up old results
+echo "Cleaning up old results..."
+rm "${GRIB2TOLOSA_DIR}/forcing.*"
+
+echo "All processing complete. Output files are in $OUTPUT_PATH"
