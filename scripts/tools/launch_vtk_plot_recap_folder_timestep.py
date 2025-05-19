@@ -57,12 +57,14 @@ def main():
     # Initialize with default values
     folder = current_path
     timestep = ''
+    pcolormax = 3
     
     # Read args and kwargs
     parser = argparse.ArgumentParser(description='Small python script to plot an hydrodynamic recap of the i-th timestep')
     parser.add_argument('args', nargs='*', help='Positional arguments: folder, timestep')
     parser.add_argument('-f', '--folder', dest='folder', default=None, help='Folder parameter as kwarg. Should be an existing relative or global path declared as str')
     parser.add_argument('-t', '--timestep', dest='timestep', default=None, help='Timestep parameter as kwarg. Should be an int or any iterable declared as a string for eval(timestep)')
+    parser.add_argument('--pcolormax', dest='pcolormax', default=None, help='Max value for centered colormap plot. Default to 3')
     
     args = parser.parse_args()
     
@@ -71,12 +73,16 @@ def main():
         folder = args.args[0]
     if len(args.args) >= 2:
         timestep = args.args[1]
+    if len(args.args) >= 3:
+        pcolormax = args.args[2]
     
     # Override with kwargs if provided
-    if args.timestep is not None:
-        timestep = args.timestep
     if args.folder is not None:
         folder = args.folder
+    if args.timestep is not None:
+        timestep = args.timestep
+    if args.pcolormax is not None:
+        pcolormax = args.pcolormax
     
     folder = (current_path / Path(folder)).resolve()
     
@@ -104,7 +110,7 @@ def main():
     plotter = ptt.VTKPlotter(output_dir)
     plotter.figsize = (3,3)
     plotter.figure_tickfontsize = 5
-    plotter.pcolor_max = 3
+    plotter.pcolor_max = pcolormax
     plotter.pcolor_min = -plotter.pcolor_max
     plotter.contour_key = ''
     # plotter.contour_fontsize = 4
