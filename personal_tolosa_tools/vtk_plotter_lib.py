@@ -1271,7 +1271,7 @@ class VTKPlotter:
                          self.quiver_positionkey[0], 
                          self.quiver_positionkey[1], 
                          self.quiver_lengthkey, 
-                         f'{self.quiver_lengthkey} {self.quiver_units}', 
+                         f'{self.quiver_lengthkey:0.3f} {self.quiver_units}', 
                          labelpos='E',
                          fontproperties={'size':self.quiver_fontsize})
         

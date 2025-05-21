@@ -10,6 +10,8 @@ DEFAULT_GRIB_FILE=~/DATA/CONFIG_DATA/grib/ATL/20090121000000_20090126230000_AROM
 OUTPUT_PATH="${WORKING_DIR}"
 MESH_FILE=""
 GRIB_FILE=""
+CHARNOCK_METHOD=3
+CHARNOCK_VALUE=0.028
 
 # Function to display usage information
 usage() {
@@ -19,17 +21,21 @@ usage() {
     echo "  -g <path>      Path to grib file (default: $DEFAULT_GRIB_FILE)"
     echo "  -p <path>      Path to grib2tolosa_mpi executable (default: $GRIB2TOLOSA_PATH)"
     echo "  -o <path>      Output directory for processed files (default: current directory)"
+    echo "  -c             Charnock stress computation method (default: 3)"
+    echo "  -v             Charnock coefficient value (default: 0.028)"
     echo "  -h             Display this help message"
     exit 1
 }
 
 # Parse command line arguments
-while getopts "m:g:p:o:h" opt; do
+while getopts "m:g:p:oi:m:c:h" opt; do
     case $opt in
         m) MESH_FILE="$OPTARG" ;;
         g) GRIB_FILE="$OPTARG" ;;
         p) GRIB2TOLOSA_PATH="$OPTARG" ;;
         o) OUTPUT_PATH="$OPTARG" ;;
+        c) CHARNOCK_METHOD="$OPTARG" ;;
+        v) CHARNOCK_VALUE="$OPTARG" ;;
         h) usage ;;
         *) usage ;;
     esac
@@ -102,8 +108,8 @@ pushd "$GRIB2TOLOSA_DIR" > /dev/null
 
 # Run grib2tolosa_mpi
 echo "Running grib2tolosa_mpi..."
-echo "$GRIB2TOLOSA_PATH 3 0.028"
-./$(basename "$GRIB2TOLOSA_PATH 3 0.028")
+echo "$GRIB2TOLOSA_PATH $CHARNOCK_METHOD $CHARNOCK_VALUE"
+./$(basename "$GRIB2TOLOSA_PATH $CHARNOCK_METHOD $CHARNOCK_VALUE")
 
 # Check if the command was successful
 if [ $? -ne 0 ]; then

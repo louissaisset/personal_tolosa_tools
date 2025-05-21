@@ -58,13 +58,15 @@ def main():
     folder = current_path
     timestep = ''
     pcolormax = 3
+    quiverscale = 25
     
     # Read args and kwargs
     parser = argparse.ArgumentParser(description='Small python script to plot an hydrodynamic recap of the i-th timestep')
     parser.add_argument('args', nargs='*', help='Positional arguments: folder, timestep')
     parser.add_argument('-f', '--folder', dest='folder', default=None, help='Folder parameter as kwarg. Should be an existing relative or global path declared as str')
     parser.add_argument('-t', '--timestep', dest='timestep', default=None, help='Timestep parameter as kwarg. Should be an int or any iterable declared as a string for eval(timestep)')
-    parser.add_argument('--pcolormax', dest='pcolormax', default=None, help='Max value for centered colormap plot. Default to 3')
+    parser.add_argument('--pcolormax', dest='pcolormax', type=float, default=None, help='Max value for centered colormap plot. Default to 3')
+    parser.add_argument('--quiverscale', dest='quiverscale', type=float, default=None, help='Scaling coefficient for que quiver arrows. Default to 25')
     
     args = parser.parse_args()
     
@@ -75,6 +77,8 @@ def main():
         timestep = args.args[1]
     if len(args.args) >= 3:
         pcolormax = args.args[2]
+    if len(args.args) >= 4:
+        quiverscale = args.args[3]
     
     # Override with kwargs if provided
     if args.folder is not None:
@@ -83,6 +87,8 @@ def main():
         timestep = args.timestep
     if args.pcolormax is not None:
         pcolormax = args.pcolormax
+    if args.quiverscale is not None:
+        quiverscale = args.quiverscale
     
     folder = (current_path / Path(folder)).resolve()
     
@@ -94,7 +100,6 @@ def main():
         ptt.p_error("Unrecognised timestep format for eval.")
         sys.exit(1)
     
-    
     # Create 'Figures' folder 
     output_dir = (current_path / f'Figures_{current_path.name}').resolve()
     ptt.p_ok(f"Defined Figure folder : {output_dir}")
@@ -105,7 +110,7 @@ def main():
     
     # Initialize classes
     reader = ptt.VTKDataReader(str(folder))
-    
+   
     # Configure the data plots
     plotter = ptt.VTKPlotter(output_dir)
     plotter.figsize = (3,3)
@@ -115,7 +120,8 @@ def main():
     plotter.contour_key = ''
     # plotter.contour_fontsize = 4
     # plotter.contour_levels = 5
-    plotter.quiver_lengthkey = 1
+    # plotter.quiver_lengthkey = 1 
+    plotter.quiver_lengthkey = 1/quiverscale
     plotter.contour_linewidths = 0.2
     plotter.rectangle_positions = [(-10000, -3000, -4000, 1000), 
                                    (-7000, -2000, 4500, 8500), 
@@ -136,7 +142,7 @@ def main():
     
     
     # Define some density factor of the quivers from the BC types
-    factor = (5-int(current_path.stem.split('_')[1]))
+    factor = (6-int(current_path.stem.split('_')[1])) # from 6 to 1
     
     # Creating the local cluster
     if os.uname()[1].startswith('belenos'):
@@ -162,8 +168,8 @@ def main():
         # Create the delayed complete figure
         plotter.figure_title = f"Timestep = {timestep_eval:05d}"
         plotter.figure_filename = '_'.join([old_filename, 'complet', f"{timestep_eval:05d}"])
-        plotter.quiver_spacing = int(170/(factor+1))
-        plotter.quiver_scale = 25
+        plotter.quiver_spacing = int(170/factor)
+        plotter.quiver_scale = quiverscale
         delayed_plot += [plot_data_plotter(deepcopy(reader), 
                                            deepcopy(plotter),
                                            timestep_eval)]
@@ -172,8 +178,9 @@ def main():
         for newplotter, new_filename, new_figsize in zip(plotter.zoomed_plotters, new_filename_list, new_figsize_list):
             newplotter.figure_filename = '_'.join([old_filename, f'{new_filename}', f"{timestep_eval:05d}"])
             newplotter.figure_size = new_figsize
-            newplotter.quiver_spacing = int(20/(factor+1))
-            newplotter.quiver_scale = 15
+            newplotter.quiver_spacing = int(20/factor)
+            # newplotter.quiver_scale = 15
+            newplotter.quiver_scale = quiverscale
             delayed_plot += [plot_data_plotter(deepcopy(reader), 
                                                deepcopy(newplotter),
                                                timestep_eval)]
@@ -183,8 +190,8 @@ def main():
                 # Create the delayed complete figure
                 plotter.figure_title = f"Timestep = {t:05d}"
                 plotter.figure_filename = '_'.join([old_filename, 'complet', f"{t:05d}"])
-                plotter.quiver_spacing = int(170/(factor+1))
-                plotter.quiver_scale = 25
+                plotter.quiver_spacing = int(170/factor)
+                plotter.quiver_scale = quiverscale
                 delayed_plot += [plot_data_plotter(deepcopy(reader), 
                                                    deepcopy(plotter),
                                                    t)]
@@ -192,8 +199,9 @@ def main():
                 for newplotter, new_filename, new_figsize in zip(plotter.zoomed_plotters, new_filename_list, new_figsize_list):
                     newplotter.figure_filename = '_'.join([old_filename, f'{new_filename}', f"{t:05d}"])
                     newplotter.figure_size = new_figsize
-                    newplotter.quiver_spacing = int(20/(factor+1))
-                    newplotter.quiver_scale = 15
+                    newplotter.quiver_spacing = int(20/factor)
+                    # newplotter.quiver_scale = 15
+                    newplotter.quiver_scale = quiverscale
                     delayed_plot += [plot_data_plotter(deepcopy(reader), 
                                                        deepcopy(newplotter), 
                                                        t)]
