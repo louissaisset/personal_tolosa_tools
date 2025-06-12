@@ -39,9 +39,9 @@ if [ -z "$FORCING_PATH" ]; then
     usage
 fi
 
-# Handle mesh file - if not provided, use first .msh file in working directory
+# Handle mesh file - if not provided, use first *_latlong.msh file in working directory
 if [ -z "$MESH_FILE" ]; then
-    MESH_FILE=$(find "$WORKING_DIR" -maxdepth 1 -name "*.msh" | head -n 1)
+    MESH_FILE=$(find "$WORKING_DIR" -maxdepth 1 -name "*_latlong.msh" | head -n 1)
     if [ -z "$MESH_FILE" ]; then
         echo "Error: No mesh file found in current directory. Please provide a mesh file with -m option."
         exit 1
@@ -69,6 +69,9 @@ rm -f "${INTERP_TIDE_PATH}"/*.msh
 # Create symbolic link to mesh file
 echo "Creating symbolic link to mesh file..."
 ln -sf "$MESH_FILE" "${INTERP_TIDE_PATH}/input.msh"
+
+echo "The following boundaries have been detected for tidal forcing:"
+cat Version_0_2_laterales_ligne_offshore_no_buffer_islands_reprojstereo_BIG2_new.msh | grep '\"IN\"'
 
 # Process forcing files
 process_forcing_file() {
