@@ -9,13 +9,13 @@ WORKING_DIR=$(pwd)
 INTERP_TIDE_PATH="/home/ext/sh/csho/saissetl/SAVE/SOFTS/config_prep_tools/global_tide"  # HARD-CODED PATH - Replace with actual path
 OUTPUT_PATH="${WORKING_DIR}"
 MESH_FILE=""
-FORCING_PATH=""
+FORCING_PATH="~/DATA/CONFIG_DATA/fes2022b_elevations_34_tidal_constituents/"
 
 # Function to display usage information
 usage() {
     echo "Usage: $0 [options]"
     echo "Options:"
-    echo "  -f <path>      Path to forcing file(s) - can be a single file, a folder, wildcards pattern, or a list of files (comma-separated)"
+    echo "  -f <path>      Path to forcing file(s) - can be a single file, a folder, wildcards pattern, or a list of files (comma-separated) (default: ~/DATA/CONFIG_DATA/fes2022b_elevations_34_tidal_constituents/)"
     echo "  -m <path>      Path to mesh file (.msh) - if not provided, will use first .msh file in working directory"
     echo "  -o <path>      Output directory for processed files (default: current directory)"
     echo "  -h             Display this help message"
