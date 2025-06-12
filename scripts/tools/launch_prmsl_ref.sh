@@ -3,13 +3,59 @@
 # Get the global path of the current directory
 CURRENT_DIR=$(pwd)
 
-# Find the first file matching the pattern *_latlong.msh
-MSH_FILE=$(find "$CURRENT_DIR" -name "*_latlong.msh" | head -n 1 | xargs basename)
-
 # Hardcoded paths towards the data files and the prmsl_ref scripts
 REF_ATM_PRES_FILE=/home/ext/sh/csho/saissetl/DATA/CONFIG_DATA/mean_ERA5_2010-2019.nc
 PRMSL_REF_EXE=/home/ext/sh/csho/saissetl/SOFTS/config_prep_tools/prmsl_ref/exe.py
 
+# # Find the first file matching the pattern *_latlong.msh
+# MSH_FILE=$(find "$CURRENT_DIR" -name "*_latlong.msh" | head -n 1 | xargs basename)
+# Vérifier l'existence d'un fichier .msh dans le dossier
+if (! `ls *_latlong.msh >& /dev/null; echo $status`) then
+
+    # Ajout d'un warning si de multiples fichiers .msh existent dans le dossier
+    set txtCount = `find . -maxdepth 1 -name "*.msh" -type f | wc -l`
+    if ($txtCount > 1) then
+        echo "  \e[33mWARNING:\e[0m Multiple .msh files found"
+    endif
+    
+    # Utilisation de find pour récupérer seulement le premier fichier .msh
+    set firstmshFile = `find . -maxdepth 1 -name "*.msh" -type f | sort | head -1`
+    
+    # Si il y a au moins un fichier .msh
+    if ("$firstmshFile" != "") then
+        
+        # Récupération du chemin absolu
+        set MSH_FILE = `realpath "$firstmshFile"`
+        echo "       \e[32mOK:\e[0m Found .msh file: $MSH_FILE"
+
+    else
+        echo "    \e[31mERROR:\e[0m No .msh files found in the current directory."
+        echo "    \e[31mERROR:\e[0m Cannot proceed without either no argument or an existing .msh file"
+        exit 1
+    endif
+else
+    echo "    \e[31mERROR:\e[0m No .msh files found in the current directory."
+    echo "    \e[31mERROR:\e[0m Cannot proceed without either no argument or an existing .msh file"
+    exit 1
+endif
+
+# Ensure Reference pressure file exists
+if [ ! -f "$REF_ATM_PRES_FILE" ]; then
+    echo "    \e[31mERROR:\e[0m Mean pressure NetCDF file does not exist: $REF_ATM_PRES_FILE"
+    exit 1
+fi
+
+# Ensure python executable exists
+if [ ! -f "$PRMSL_REF_EXE" ]; then
+    echo "    \e[31mERROR:\e[0m Python executable file does not exist: $PRMSL_REF_EXE"
+    exit 1
+fi
+
+# Create symbolic link to the ERA5 data
+ln -sf $REF_ATM_PRES_FILE $CURRENT_DIR/mean_ERA5_2010-2019.nc
+echo "       \e[32mOK:\e[0m Created a symbolic link towards $REF_ATM_PRES_FILE"
+ln -sf $PRMSL_REF_EXE $CURRENT_DIR/prmsl_ref_exe
+echo "       \e[32mOK:\e[0m Created a symbolic link towards $PRMSL_REF_EXE"
 
 # Define the content of the config.yaml file
 CONFIG_CONTENT="# =============================================================================
@@ -33,14 +79,10 @@ method : cubic
 endianness : little
 "
 
-# Create symbolic link to the ERA5 data
-echo "    Create a symbolic link towards $REF_ATM_PRES_FILE"
-ln -s $REF_ATM_PRES_FILE mean_ERA5_2010-2019.nc
-
 # Write the content to config.yaml
-echo "    Create config.yaml"
 echo "$CONFIG_CONTENT" > config.yaml
+echo "       \e[32mOK:\e[0m Created config.yaml"
 
 # Launch prmsl
-echo "    Launch prmsl_ref/exe.py"
-python3 $PRMSL_REF_EXE
+echo "Launching prmsl_ref_exe..."
+python3 $CURRENT_DIR/prmsl_ref_exe
