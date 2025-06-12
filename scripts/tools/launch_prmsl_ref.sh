@@ -10,7 +10,7 @@ PRMSL_REF_EXE=/home/ext/sh/csho/saissetl/SOFTS/config_prep_tools/prmsl_ref/exe.p
 # # Find the first file matching the pattern *_latlong.msh
 # MSH_FILE=$(find "$CURRENT_DIR" -name "*_latlong.msh" | head -n 1 | xargs basename)
 # Vérifier l'existence d'un fichier .msh dans le dossier
-if (! `ls *_latlong.msh >& /dev/null; echo $status`); then
+if [ ! `ls *_latlong.msh >& /dev/null; echo $status` ]; then
 
     # Ajout d'un warning si de multiples fichiers .msh existent dans le dossier
     set txtCount = `find . -maxdepth 1 -name "*.msh" -type f | wc -l`
