@@ -10,34 +10,35 @@ PRMSL_REF_EXE=/home/ext/sh/csho/saissetl/SOFTS/config_prep_tools/prmsl_ref/exe.p
 # # Find the first file matching the pattern *_latlong.msh
 # MSH_FILE=$(find "$CURRENT_DIR" -name "*_latlong.msh" | head -n 1 | xargs basename)
 # Vérifier l'existence d'un fichier .msh dans le dossier
-if (! `ls *_latlong.msh >& /dev/null; echo $status`) then
+if (! `ls *_latlong.msh >& /dev/null; echo $status`); then
 
     # Ajout d'un warning si de multiples fichiers .msh existent dans le dossier
     set txtCount = `find . -maxdepth 1 -name "*.msh" -type f | wc -l`
     if ($txtCount > 1) then
         echo "  \e[33mWARNING:\e[0m Multiple .msh files found"
-    endif
+    fi
     
     # Utilisation de find pour récupérer seulement le premier fichier .msh
-    set firstmshFile = `find . -maxdepth 1 -name "*.msh" -type f | sort | head -1`
-    
+    firstmshFile=`find . -maxdepth 1 -name "*.msh" -type f | sort | head -1`
+    echo $firstmshFile
+
     # Si il y a au moins un fichier .msh
-    if ("$firstmshFile" != "") then
+    if ("$firstmshFile" != ""); then
         
         # Récupération du chemin absolu
-        set MSH_FILE = `realpath "$firstmshFile"`
+	MSH_FILE=$(realpath $firstmshFile)
         echo "       \e[32mOK:\e[0m Found .msh file: $MSH_FILE"
 
     else
         echo "    \e[31mERROR:\e[0m No .msh files found in the current directory."
         echo "    \e[31mERROR:\e[0m Cannot proceed without either no argument or an existing .msh file"
         exit 1
-    endif
+    fi
 else
     echo "    \e[31mERROR:\e[0m No .msh files found in the current directory."
     echo "    \e[31mERROR:\e[0m Cannot proceed without either no argument or an existing .msh file"
     exit 1
-endif
+fi
 
 # Ensure Reference pressure file exists
 if [ ! -f "$REF_ATM_PRES_FILE" ]; then
