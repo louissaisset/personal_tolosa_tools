@@ -1,163 +1,64 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-"""
-Created on Tue Feb 25 09:35:54 2025
-
-@author: llsaisset
-"""
-
-
-import sys
-sys.path.append("/local/home/lsaisset/DATA/Scripts/personal_tolosa_tools/")
-import personal_tolosa_tools as ptt
-
-from pathlib import Path
+import rasterio
 import numpy as np
+from rasterio.transform import from_origin
 
+# Path to your TIFF files
+tiff_path_1 = '/local/home/lsaisset/DATA/CONFIG_DATA/bathy_tif/Litto3D_5m_Rade_EPSG4326_coupe.tif'
+tiff_path_2 = '/local/home/lsaisset/DATA/CONFIG_DATA/bathy_tif/MNT_ATL100m_HOMONIM_WGS84_NM_ZNEG_reprojEPSG4326_coupe.tif'
 
-# print("    \033[31mERROR:\033[0m 
-# print("       \033[32mOK:\033[0m 
-# print("  \033[33mWARNING:\033[0m 
+# Open the first TIFF file
+with rasterio.open(tiff_path_1) as src1:
+    # Read the raster data
+    raster_data_1 = src1.read(1)  # Reads the first band
+    # Get metadata
+    metadata_1 = src1.meta
+    # Get the coordinate reference system (CRS)
+    crs_1 = src1.crs
+    # Get the transform
+    transform_1 = src1.transform
 
+    # Get the number of rows and columns
+    rows, cols = raster_data_1.shape
 
+    # Generate grid cell centers
+    x_coords = np.arange(cols) + 0.5
+    y_coords = np.arange(rows) + 0.5
 
-start_path = Path("/local/home/lsaisset/DATA/Configs_Brest/Tests_versions_meshtool")
+    # Convert pixel coordinates to world coordinates
+    x_world, y_world = rasterio.transform.xy(transform_1, y_coords[:, np.newaxis], x_coords[np.newaxis, :])
 
-all_folder_meshes = sorted([folder for folder in start_path.iterdir() if folder.is_dir() and folder.name.startswith("BC_")])
+    # Sample the raster data at the grid points
+    height_values_1 = raster_data_1[y_coords.astype(int), x_coords.astype(int)]
 
+# Open the second TIFF file
+with rasterio.open(tiff_path_2) as src2:
+    # Read the raster data
+    raster_data_2 = src2.read(1)  # Reads the first band
+    # Get the transform
+    transform_2 = src2.transform
 
-resu_points = len(all_folder_meshes)*[0]
-resu_cells = len(all_folder_meshes)*[0]
-for folder, folder_index in zip(all_folder_meshes, range(len(all_folder_meshes))) :
-    
-    print(folder.name)
-    
-    reader = ptt.VTKDataReader(folder)
-    vtk_files = [f for f in reader._get_vtk_files() if f.endswith("_diag.vtk")]
+    # Create a mask for NaN values in the first raster
+    nan_mask = np.isnan(height_values_1)
 
-    if vtk_files:
-        vtk_file = vtk_files[0]
-        
-        # Read data
-        vtk_data = reader.read_file(0)
-        
-        # Processdata
-        processor = ptt.VTKDataProcessor(vtk_data)
-        
-        resu_points[folder_index] = processor.num_points
-        resu_cells[folder_index] = processor.num_cells
-    
+    # Get the indices of NaN values
+    nan_indices = np.where(nan_mask)
 
+    # Interpolate height values from the second raster for NaN cells in the first raster
+    for i, j in zip(nan_indices[0], nan_indices[1]):
+        # Convert pixel coordinates to world coordinates for the NaN cell
+        x, y = rasterio.transform.xy(transform_1, i, j)
 
-list_name_folder = [f.name for f in all_folder_meshes]
-list_name_BC = list(dict.fromkeys(['_'.join(f.split('_')[0:2]) for f in list_name_folder]))
-list_name_cond = list(dict.fromkeys(['_'.join(f.split('_')[2:]) for f in list_name_folder]))
+        # Convert world coordinates to pixel coordinates in the second raster
+        row, col = ~transform_2 * (x, y)
 
-# dictionnaire_dossiers = {'_'.join(nom.split('_')[0:2]): nom for nom in list_name_folder}
+        # Sample the height value from the second raster
+        height_values_1[i, j] = raster_data_2[int(row), int(col)]
 
+# Combine x, y coordinates and height values into a list of points
+grid_points_with_height = [{"x": x, "y": y, "height": height}
+                           for x, y, height in zip(x_world.flatten(), y_world.flatten(), height_values_1.flatten())]
 
-tableau = np.full((len(list_name_BC), len(list_name_cond)), None)
-for folder, n_cells in zip(list_name_folder, resu_cells):
-    BC = '_'.join(folder.split('_')[0:2])
-    cond = '_'.join(folder.split('_')[2:])
-    # Trouver l'indice du nom et de la valeur
-    i = list_name_BC.index(BC)
-    j = list_name_cond.index(cond)
-    # Ajouter la valeur dans le tableau à la position (i, j)
-    tableau[i, j] = n_cells
+print("Number of grid points with height values:", len(grid_points_with_height))
+print("First few grid points with height values:", grid_points_with_height[:5])
 
-
-
-
-
-
-list_name_BC
-
-list_name_cond
-
-print(' & '.join(map(str, tableau.T[3,:])))
-
-
-print(' & '.join(map(str, tableau.T[2, :])))
-
-# In[]
-
-
-
-times = np.array([[218, 18, 1049, np.nan, np.nan, 16125],
-                  [262, 20, 1092, np.nan, np.nan, np.nan],
-                  [219, 18, 1068, np.nan, np.nan, 4325],
-                  [235, 27, 1058, np.nan, np.nan, 17057],
-                  [260, 29, 1105, 9228, 9060, 4033],
-                  [252, 30, 1122, 10498, 10462, 4695],
-                  [252, 29, 1138, 9465, 9302, 4579],
-                  [260, 29, 1105, 9228, 9060, 4033],
-                  [324, 67, 1258, 10461, 10303, 5437],
-                  [260, 29, 1105, 9228, 9060, 4033],
-                  [282, 32, 1103, 7851, 7847, 3757],
-                  [244, 32, 1081, 7516, 7474, 3541],
-                  [255, 34, 1074, 6897, 6908, 3460]])
-
-
-cells = np.array([[32622, 32622, 93186, np.nan, np.nan, 2772015],
-                  [32624, 32622, 93175, np.nan, np.nan, np.nan],
-                  [32622, 32622, 93186, np.nan, np.nan, 375207],
-                  [32650, 32652, 93186, np.nan, np.nan, 2772015],
-                  [32692, 32690, 93175, 375302, 375302, 374886],
-                  [33810, 33814, 103345, 414180, 414180, 413778],
-                  [33810, 33814, 103345, 414180, 414180, 413778],
-                  [32692, 32690, 93175, 375302, 375302, 374886],
-                  [46279, 46277, 103771, 427077, 427077, 425868],
-                  [32692, 32690, 93175, 375302, 375302, 374886],
-                  [32642, 32640, 93186, 351601, 351601, 351699],
-                  [32652, 32654, 93186, 330050, 330050, 330051],
-                  [32739, 32739, 93186, 348847, 348847, 348331]])
-
-eff = cells/times
-
-def disp(a):
-    return f"{a:<13.0f}"
-
-for i in range(len(eff)):
-    print(' & '.join(map(disp, eff[i, :])))
-
-
-# In[]
-
-import matplotlib.pyplot as plt
-
-plt.figure()
-plt.imshow(np.log10(times))
-plt.colorbar()
-# plt.gca().invert_yaxis()
-plt.show()
-
-
-plt.figure()
-plt.imshow(np.log10(cells))
-plt.colorbar()
-# plt.gca().invert_yaxis()
-plt.show()
-
-
-plt.figure()
-plt.imshow(np.log10(eff))
-plt.colorbar()
-# plt.gca().invert_yaxis()
-plt.show()
-
-
-plt.figure()
-plt.plot(np.log10(cells.ravel()), np.log10(eff.ravel()), '+b')
-# plt.gca().invert_yaxis()
-plt.show()
-
-
-plt.figure()
-plt.plot(np.log10(cells.ravel()), np.log10(times.ravel()), '+g')
-# plt.gca().invert_yaxis()
-plt.show()
-
-
-
-
+# Now you have a list of grid points with their corresponding height values, including interpolated values for NaN cells

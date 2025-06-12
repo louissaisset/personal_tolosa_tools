@@ -47,18 +47,6 @@ def plot_quad_data_plotter(plotter, X, Y, data_key, cell_data):
     plotter.plot_quad_data(X, Y, data)
     ptt.p_ok("Figure created and saved")
 
-@dask.delayed
-def interp_data(reader, t, X, Y, data_key):
-    
-    vtk_data = reader.read_file(t) 
-    processor = ptt.VTKDataProcessor(vtk_data)
-    interpolated_value = processor.compute_interpolation_masked_grid(processor.cell_centers_array[:,0], 
-                                                                     processor.cell_centers_array[:,1],
-                                                                     processor.cell_data[data_key],
-                                                                     X, Y, method='nearest')
-    ptt.p_ok("Interpolation done")
-    return(interpolated_value)
-
 def main():
     print("\nBeginning script for comparing the results of 2 simulations on a same regular grid...")
     
@@ -149,25 +137,19 @@ def main():
     # Create 'Figures' folder for the outputs
     output_dir = (current_path / f'Figures_{current_path.name}_interp').resolve()
     ptt.p_ok(f"Defined Figure folder : {output_dir}")
-
     
 
-
-
-    print("\nInitializing the data Readers...")
     
-    # Initialize classes
-    reader1 = ptt.VTKDataReader(str(folder1))
-    reader2 = ptt.VTKDataReader(str(folder2))
-    
-    
+    # print("\nInitializing the data Readers...")
+    # # Initialize classes
+    # reader1 = ptt.VTKDataReader(str(folder1))
+    # reader2 = ptt.VTKDataReader(str(folder2))
     
     
     
     print("\nInitializing the data Plotters...")
-    
     # Configure the data plots
-    plotter = ptt.VTKPlotter(output_dir)
+    plotter = ptt.Plotter(output_dir)
     # plotter.figure_save = False
     plotter.figure_tickfontsize = 5
     plotter.pcolor_key = data_key
@@ -196,10 +178,7 @@ def main():
     
     
     
-    
-    
     print("\nInitializing the new grids...")
-    
     X_list, Y_list = [], []
     for xmin, xmax, ymin, ymax in plotter.rectangle_positions:
         x = np.arange(xmin, xmax + xreso_eval, xreso_eval)
@@ -210,7 +189,6 @@ def main():
     
     
     
-    
     print("\nInitializing the dask local cluster...")
     # Creating the local cluster and client 
     cluster = LocalCluster(n_workers=8, threads_per_worker=1)
@@ -218,38 +196,36 @@ def main():
     ptt.p_ok(f"See client dashboard via dask at: {client.dashboard_link}")
     cluster.scale(8)
     
+
+
+    print("\nDefining the necessary reading processes...")
+    to_be_processed_1 = ptt.files_for_timesteps(timestep_eval, str(folder1))
+    to_be_processed_2 = ptt.files_for_timesteps(timestep_eval, str(folder2))
+
+    print('list of processes:', to_be_processed_1)
     
     print("\nInterpolating the data over the new grids...")
- 
     delayed_interpolation = []
-    if timestep_eval.__class__ == int:
-        
-        # Iterate over the zoom zones and delay the corresponding figure plotting
+    # iterate on timesteps
+    for args1, args2 in zip(to_be_processed_1, to_be_processed_2):
+        # iterate on subdomains
         for X, Y in zip(X_list, Y_list):
-            delayed_interpolation += [interp_data(reader1, timestep_eval, 
-                                                  X, Y, data_key)]
-            delayed_interpolation += [interp_data(reader2, timestep_eval, 
-                                                  X, Y, data_key)]
-            
-    else:
-        try:
-            for t in timestep_eval:
-                # Iterate over the zoom zones and delay the corresponding figure plotting
-                for X, Y in zip(X_list, Y_list):
-                    delayed_interpolation += [interp_data(deepcopy(reader1), t, 
-                                                          X, Y, data_key)]
-                    delayed_interpolation += [interp_data(deepcopy(reader2), t, 
-                                                          X, Y, data_key)]
-        except:
-            ptt.p_error("Unrecognised timestep format. Should be either int or iterable")
-            sys.exit(1)
-    
+            # lazily declare the interpolations
+            delayed_interpolation += [ptt.interp_data_on_grid(X, Y, data_key, 
+                                                              *args1)]
+            delayed_interpolation += [ptt.interp_data_on_grid(X, Y, data_key, 
+                                                              *args2)]
+
     # Ask for the computing of such interpolations
     grid_data_list = dask.compute(*delayed_interpolation)
     
 
-
-
+    # Create the delayed task list
+    if timestep_eval.__class__ == int:
+        listed_timestep = [timestep_eval]
+    else:
+        listed_timestep = list(timestep_eval)
+    
     
     print("\nPlotting the data comparison...")
     # Create the delayed task list
@@ -257,7 +233,9 @@ def main():
     N1 = folder1.parents[-current_path.parents.__len__()-2].name
     N2 = folder2.parents[-current_path.parents.__len__()-2].name
     old_filename = f'Comparison_{BCtype}_{data_key}_{N1}_MOINS_{N2}'
-    if timestep_eval.__class__ == int:
+    
+    for k in range(len(listed_timestep)):
+        t = listed_timestep[k]
         # Iterate over the zoom zones and delay the corresponding figure plotting
         for i in range(len(plotter.zoomed_plotters)):
             newplotter = deepcopy(plotter.zoomed_plotters[i])
@@ -265,42 +243,39 @@ def main():
             new_figsize = new_figsize_list[i]
             new_X = X_list[i]
             new_Y = Y_list[i]
-            new_grid_data_1 = grid_data_list[i*2]
-            new_grid_data_2 = grid_data_list[i*2 + 1]
+            new_grid_data_1 = grid_data_list[2*k*len(listed_timestep) + i*2]
+            new_grid_data_2 = grid_data_list[2*k*len(listed_timestep) + i*2 + 1]
             grid_data_comparison = new_grid_data_1 - new_grid_data_2
-            
-            newplotter.figure_filename = '_'.join([old_filename, f'{new_filename}', f"{timestep_eval:05d}"])
+
+            newplotter.figure_filename = '_'.join([old_filename, f'{new_filename}', f"{t:05d}"])
             newplotter.figure_size = new_figsize
             delayed_plot += [plot_quad_data_plotter(deepcopy(newplotter), 
                                                     new_X, new_Y, 
                                                     data_key,
                                                     grid_data_comparison)]
-    else:
-        try:
-            for t in timestep_eval:
-                # Iterate over the zoom zones and delay the corresponding figure plotting
-                for i in range(len(plotter.zoomed_plotters)):
-                    newplotter = deepcopy(plotter.zoomed_plotters[i])
-                    new_filename = new_filename_list[i]
-                    new_figsize = new_figsize_list[i]
-                    new_X = X_list[i]
-                    new_Y = Y_list[i]
-                    new_grid_data_1 = grid_data_list[i*2]
-                    new_grid_data_2 = grid_data_list[i*2 + 1]
-                    grid_data_comparison = new_grid_data_1 - new_grid_data_2
+    # else:
+    #     try:
+    #         for t in timestep_eval:
+    #             # Iterate over the zoom zones and delay the corresponding figure plotting
+    #             for i in range(len(plotter.zoomed_plotters)):
+    #                 newplotter = deepcopy(plotter.zoomed_plotters[i])
+    #                 new_filename = new_filename_list[i]
+    #                 new_figsize = new_figsize_list[i]
+    #                 new_X = X_list[i]
+    #                 new_Y = Y_list[i]
+    #                 new_grid_data_1 = grid_data_list[i*2]
+    #                 new_grid_data_2 = grid_data_list[i*2 + 1]
+    #                 grid_data_comparison = new_grid_data_1 - new_grid_data_2
                     
-                    print(newplotter.figure_filename)
-                    
-                    newplotter.figure_filename = '_'.join([old_filename, f'{new_filename}', f"{t:05d}"])
-                    print(newplotter.figure_filename)
-                    newplotter.figure_size = new_figsize
-                    delayed_plot += [plot_quad_data_plotter(deepcopy(newplotter), 
-                                                            new_X, new_Y, 
-                                                            data_key,
-                                                            grid_data_comparison)]
-        except:
-            ptt.p_error("Unrecognised timestep format. Should be either int or iterable")
-            sys.exit(1)
+    #                 newplotter.figure_filename = '_'.join([old_filename, f'{new_filename}', f"{t:05d}"])
+    #                 newplotter.figure_size = new_figsize
+    #                 delayed_plot += [plot_quad_data_plotter(deepcopy(newplotter), 
+    #                                                         new_X, new_Y, 
+    #                                                         data_key,
+    #                                                         grid_data_comparison)]
+        # except:
+        #     ptt.p_error("Unrecognised timestep format. Should be either int or iterable")
+        #     sys.exit(1)
     
     # Ask for the computing and saving of such figures
     dask.compute(*delayed_plot)

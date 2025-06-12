@@ -105,14 +105,9 @@ def main():
     ptt.p_ok(f"Defined Figure folder : {output_dir}")
 
     
-    print("\nInitializing the data Reader and Plotter")
-    
-    
-    # Initialize classes
-    reader = ptt.VTKDataReader(str(folder))
-   
+    print("\nInitializing the data Plotter")
     # Configure the data plots
-    plotter = ptt.VTKPlotter(output_dir)
+    plotter = ptt.Plotter(output_dir)
     plotter.figsize = (3,3)
     plotter.figure_tickfontsize = 5
     plotter.pcolor_max = pcolormax
@@ -140,9 +135,9 @@ def main():
     # Keep the original file name in memory
     old_filename = plotter.auto_filename()
     
-    
     # Define some density factor of the quivers from the BC types
-    factor = (6-int(current_path.stem.split('_')[1])) # from 6 to 1
+    # factor = (6-int(current_path.stem.split('_')[1])) # from 6 to 1
+    factor = 1 # from 6 to 1
     
     # Creating the local cluster
     if os.uname()[1].startswith('belenos'):
@@ -162,53 +157,37 @@ def main():
     assert client.submit(lambda x : x+1, 20, workers=2).result() == 21
     ptt.p_ok(f"See client dashboard via dask at: {client.dashboard_link}")
     
+    
+    
+    
+    print("\nDefining the necessary reading processes...")
+    to_be_processed = ptt.files_for_timesteps(timestep_eval, folder)
+    
     # Create the delayed task list
-    delayed_plot = []
     if timestep_eval.__class__ == int:
+        pair = zip([timestep_eval], to_be_processed)
+    else:
+        pair = zip(timestep_eval, to_be_processed)
+        
+    print("\nProcessing and plotting the data...")
+    delayed_plot = []
+    for t, step in pair:
         # Create the delayed complete figure
-        plotter.figure_title = f"Timestep = {timestep_eval:05d}"
-        plotter.figure_filename = '_'.join([old_filename, 'complet', f"{timestep_eval:05d}"])
+        plotter.figure_title = f"Timestep = {t:05d}"
+        plotter.figure_filename = '_'.join([old_filename, 'complet', f"{t:05d}"])
         plotter.quiver_spacing = int(170/factor)
         plotter.quiver_scale = quiverscale
-        delayed_plot += [plot_data_plotter(deepcopy(reader), 
-                                           deepcopy(plotter),
-                                           timestep_eval)]
+        delayed_plot += [ptt.plot_data_plotter(deepcopy(plotter), *step)]
         
         # Iterate over the zoom zones and delay the corresponding figure plotting
         for newplotter, new_filename, new_figsize in zip(plotter.zoomed_plotters, new_filename_list, new_figsize_list):
-            newplotter.figure_filename = '_'.join([old_filename, f'{new_filename}', f"{timestep_eval:05d}"])
+            newplotter.figure_filename = '_'.join([old_filename, f'{new_filename}', f"{t:05d}"])
             newplotter.figure_size = new_figsize
             newplotter.quiver_spacing = int(20/factor)
             # newplotter.quiver_scale = 15
             newplotter.quiver_scale = quiverscale
-            delayed_plot += [plot_data_plotter(deepcopy(reader), 
-                                               deepcopy(newplotter),
-                                               timestep_eval)]
-    else:
-        try:
-            for t in timestep_eval:
-                # Create the delayed complete figure
-                plotter.figure_title = f"Timestep = {t:05d}"
-                plotter.figure_filename = '_'.join([old_filename, 'complet', f"{t:05d}"])
-                plotter.quiver_spacing = int(170/factor)
-                plotter.quiver_scale = quiverscale
-                delayed_plot += [plot_data_plotter(deepcopy(reader), 
-                                                   deepcopy(plotter),
-                                                   t)]
-                # Iterate over the zoom zones and delay the corresponding figure plotting
-                for newplotter, new_filename, new_figsize in zip(plotter.zoomed_plotters, new_filename_list, new_figsize_list):
-                    newplotter.figure_filename = '_'.join([old_filename, f'{new_filename}', f"{t:05d}"])
-                    newplotter.figure_size = new_figsize
-                    newplotter.quiver_spacing = int(20/factor)
-                    # newplotter.quiver_scale = 15
-                    newplotter.quiver_scale = quiverscale
-                    delayed_plot += [plot_data_plotter(deepcopy(reader), 
-                                                       deepcopy(newplotter), 
-                                                       t)]
-        except:
-            ptt.p_error("Unrecognised timestep format. Should be either int or iterable")
-            sys.exit(1)
-            
+            delayed_plot += [ptt.plot_data_plotter(deepcopy(newplotter), *step)]
+    
     # Ask for the computing and saving of such figures
     dask.compute(*delayed_plot)
     

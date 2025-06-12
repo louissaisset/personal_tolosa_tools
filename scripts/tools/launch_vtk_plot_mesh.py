@@ -16,7 +16,7 @@ sys.path.append(os.path.expanduser(path_tolosa_path))
 import personal_tolosa_tools as ptt
 
 import matplotlib as mpl
-mpl.use('agg')
+# mpl.use('agg')
 
 import matplotlib.pyplot as plt
 # Paramètres d'affichage pour que ce soit toujours plus propre
@@ -34,37 +34,75 @@ from pathlib import Path
 import argparse
 
 def main():
-    print("\nBeginning script for plotting the grid info from the diag.vtk file...")
-    
-    # Initialize parameters
-    current_path = Path.cwd()
-    ptt.p_ok(f"Launched from : {current_path}")
-    
     
     # Read args and kwargs
     parser = argparse.ArgumentParser(description="A small python script to generate matplotlib figures of a tolosa mesh using the informations of the first '.vtk' file found inside the current path")
     # Parse arguments
     args = parser.parse_args()
     
-    # Initialize classes
-    reader = ptt.VTKDataReader(current_path)
     
-    output_dir = (current_path / f'Figures_{current_path.name}').resolve()
+    print("\nBeginning script for plotting the grid info from the diag.vtk file...")
+    
+    # Initialize parameters
+    current_path = Path.cwd()
+    ptt.p_ok(f"Launched from : {current_path}")
+    
+    output_dir = str((current_path / f'Figures_{current_path.name}').resolve())
     ptt.p_ok(f"Defined Figure folder : {output_dir}")
     
+    current_path = str(current_path)
     
+    # Instantiate Reader Class
+    # reader = ptt.VTKDataReader(current_path)
+    
+    # New version using Roman's method
+    supported_filenames = sorted(list(ptt.Reader.search(current_path)))
+    ptt.p_ok(f"Supported filenames for reader: {supported_filenames}")
+    
+    # Needed for Binary plots
+    txt_info_files = sorted(list(ptt.InfoTxtReader.search(current_path)))
+    bin_data_files = sorted(list(ptt.DataBinReader.search(current_path)))
+    bin_mesh_files = sorted(list(ptt.MeshBinReader.search(current_path)))
+    
+    # Needed for VTK plots
+    vtk_data_files = sorted(list(ptt.DataVTKReader.search(current_path)))
+    
+    # Instantiate the reader
+    file_rdr = ptt.FileReader()
     
     print("\nBeginning the plotting...")
     
-    # Read data in first encountered vtk file
-    vtk_data = reader.read_file(reader.vtk_files[0])
-    
-    # Processdata
-    processor = ptt.VTKDataProcessor(vtk_data)    
-    processor.cell_data['radiusratio'] = processor.compute_radiusratio()
+    # New version
+    if len(bin_data_files) and len(bin_mesh_files) and len(txt_info_files):
+        ptt.p_ok(f"Using Binary Data file: {bin_data_files[0]}")
+        ptt.p_ok(f"Using Binary Mesh file: {bin_mesh_files[0]}")
+        ptt.p_ok(f"Using Text info file: {txt_info_files[0]}")
+        
+        details = file_rdr.read_file(current_path, txt_info_files[0])
+        if len(bin_data_files) > 1:
+            variables = details['result_data_xxxxxx.bin']['variables']
+        elif len(bin_data_files) == 1:
+            variables = details[bin_data_files[0]]['variables']
+        ptt.p_ok(f"Using Variables: {variables}")
+        
+        data = file_rdr.read_file(current_path, bin_data_files[0], variables=variables)
+        mesh = file_rdr.read_file(current_path, bin_mesh_files[0])
+        
+        # Processdata
+        processor = ptt.BinDataProcessor(data, mesh, variables)
+        
+        # processor.cell_data['radiusratio'] = processor.compute_radiusratio()
+        
+    elif len(vtk_data_files) > 0:
+        data = file_rdr.read_file(current_path, vtk_data_files[0])
+        # Processdata
+        processor = ptt.VTKDataProcessor(data)
+        # processor.cell_data['radiusratio'] = processor.compute_radiusratio()
+    else:
+        sys.exit()
     
     # Configure the data plots
-    plotter = ptt.VTKPlotter(output_dir)
+    plotter = ptt.Plotter(output_dir)
     plotter.figure_format = 'pdf'
     plotter.figure_tickfontsize = 5
     plotter.figure_size = (6,6)
@@ -198,4 +236,5 @@ def main():
         newplotter.Plot(processor)
     
 if __name__ == "__main__":
-    exit(main())
+    # exit(main())
+    main()

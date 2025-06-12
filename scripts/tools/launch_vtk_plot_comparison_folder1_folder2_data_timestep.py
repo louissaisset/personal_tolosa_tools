@@ -36,23 +36,6 @@ if not os.uname()[1].startswith('belenos'):
 
 import dask
 from dask.distributed import LocalCluster, Client
-    
-    
-    
-@dask.delayed
-def plot_tri_data_plotter(plotter, reader1, reader2, data_key, t):
-
-    vtk_data1 = reader1.read_file(t) 
-    vtk_data2 = reader2.read_file(t) 
-    processor1 = ptt.VTKDataProcessor(vtk_data1)
-    processor2 = ptt.VTKDataProcessor(vtk_data2)
-    cell_data_diff = processor1.compute_cell_data_differences(processor2)
-    tripcolor_tri, tricontour_tri = processor1.compute_triangulations()
-    plotter.plot_triangle_data(tripcolor_tri, 
-                               tricontour_tri,
-                               cell_data_diff, 
-                               processor1.cell_centers_array)
-    ptt.p_ok("Figure created and saved")
 
 def main():
     print("\nBeginning script for comparing the results of two folders...")
@@ -130,15 +113,10 @@ def main():
     ptt.p_ok(f"Defined Figure folder : {output_dir}")
 
     
-    print("\nInitializing the data Reader and Plotter")
-    
-    
-    # Initialize classes
-    reader1 = ptt.VTKDataReader(str(folder1))
-    reader2 = ptt.VTKDataReader(str(folder2))
+    print("\nInitializing the data Plotter")
     
     # Configure the data plots
-    plotter = ptt.VTKPlotter(output_dir)
+    plotter = ptt.Plotter(output_dir)
     plotter.figsize = (3,3)
     plotter.figure_tickfontsize = 5
     plotter.pcolor_cmap = 'RdBu'
@@ -185,50 +163,44 @@ def main():
     assert client.submit(lambda x : x+1, 20, workers=2).result() == 21
     ptt.p_ok(f"See client dashboard via dask at: {client.dashboard_link}")
     
+    
+    
+    print("\nDefining the necessary reading processes...")
+    to_be_processed_1 = ptt.files_for_timesteps(timestep_eval, str(folder1))
+    to_be_processed_2 = ptt.files_for_timesteps(timestep_eval, str(folder2))
+    
     # Create the delayed task list
-    delayed_plot = []
     if timestep_eval.__class__ == int:
+        triplet = zip([timestep_eval], to_be_processed_1, to_be_processed_2)
+    else:
+        triplet = zip(timestep_eval, to_be_processed_1, to_be_processed_2)
+    
+    
+    
+    print("\nProcessing and plotting the data...")
+    delayed_plot = []
+    for t, step_1, step_2 in triplet:
+        if step_1[0] != step_2[0]:
+            continue
+        else:
+            process_type = step_1[0]
+            step_1 = step_1[1:]
+            step_2 = step_2[1:]
+        
         # Create the delayed complete figure
-        plotter.figure_title = f"Timestep = {timestep_eval:05d}"
-        plotter.figure_filename = '_'.join([old_filename, 'complet', f"{timestep_eval:05d}"])
-        delayed_plot += [plot_tri_data_plotter(deepcopy(plotter), 
-                                               deepcopy(reader1), 
-                                               deepcopy(reader2), 
-                                               data_key, 
-                                               timestep_eval)]
+        plotter.figure_title = f"Timestep = {t:05d}"
+        plotter.figure_filename = '_'.join([old_filename, 'complet', f"{t:05d}"])
+        delayed_plot += [ptt.plot_tri_data_comparison(deepcopy(plotter), 
+                                                      process_type, 
+                                                      step_1, step_2)]
         
         # Iterate over the zoom zones and delay the corresponding figure plotting
         for newplotter, new_filename, new_figsize in zip(plotter.zoomed_plotters, new_filename_list, new_figsize_list):
-            newplotter.figure_filename = '_'.join([old_filename, f'{new_filename}', f"{timestep_eval:05d}"])
+            newplotter.figure_filename = '_'.join([old_filename, f'{new_filename}', f"{t:05d}"])
             newplotter.figure_size = new_figsize
-            delayed_plot += [plot_tri_data_plotter(deepcopy(newplotter), 
-                                                   deepcopy(reader1), 
-                                                   deepcopy(reader2), 
-                                                   data_key, 
-                                                   timestep_eval)]
-    else:
-        try:
-            for t in timestep_eval:
-                # Create the delayed complete figure
-                plotter.figure_title = f"Timestep = {t:05d}"
-                plotter.figure_filename = '_'.join([old_filename, 'complet', f"{t:05d}"])
-                delayed_plot += [plot_tri_data_plotter(deepcopy(plotter), 
-                                                       deepcopy(reader1), 
-                                                       deepcopy(reader2), 
-                                                       data_key, 
-                                                       t)]
-                # Iterate over the zoom zones and delay the corresponding figure plotting
-                for newplotter, new_filename, new_figsize in zip(plotter.zoomed_plotters, new_filename_list, new_figsize_list):
-                    newplotter.figure_filename = '_'.join([old_filename, f'{new_filename}', f"{t:05d}"])
-                    newplotter.figure_size = new_figsize
-                    delayed_plot += [plot_tri_data_plotter(deepcopy(newplotter), 
-                                                           deepcopy(reader1), 
-                                                           deepcopy(reader2), 
-                                                           data_key, 
-                                                           t)]
-        except:
-            ptt.p_error("Unrecognised timestep format. Should be either int or iterable")
-            sys.exit(1)
+            delayed_plot += [ptt.plot_tri_data_comparison(deepcopy(newplotter), 
+                                                          process_type, 
+                                                          step_1, step_2)]
             
     # Ask for the computing and saving of such figures
     dask.compute(*delayed_plot)

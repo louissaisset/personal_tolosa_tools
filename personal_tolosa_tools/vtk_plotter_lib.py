@@ -376,7 +376,6 @@ class VTKDataProcessor:
         for i in range(self.num_cells):
             new_data[i] = quality_array.GetValue(i)
         
-        # processor.cell_data['radiusratio'] = new_data
         return new_data
     
     def compute_cell_data_differences(self, other_processor) -> dict:
@@ -975,8 +974,6 @@ class VTKPlotter:
             rectangle_colors (list or str, optional): List of colors for the rectangles displaying the zoom positions. Defaults to 'k'
             rectangle_linewidths (list or int, optional): List of linewidths for the rectangles displaying the zoom positions. Defaults to 10
         """
-        # timestep (int, optional): Timestep corresponding to the data. Defaults to 4.
-        
         
         self.figure_outputdir = figure_outputdir
         self.figure_title= figure_title 
@@ -991,8 +988,6 @@ class VTKPlotter:
         self.figure_tickfontsize = figure_tickfontsize
         self.figure_grid_linewidth = figure_grid_linewidth 
         self.figure_axes_color = figure_axes_color 
-        
-        # self.timestep = timestep
         
         self.pcolor_key = pcolor_key
         self.pcolor_max = pcolor_max
@@ -1031,10 +1026,15 @@ class VTKPlotter:
     def _setup_figure(self) -> typing.Tuple[plt.Figure, plt.Axes]:
         """
         Create and setup the figure and axes.
-        
-        Returns:
-            Tuple of matplotlib figure and axes
+
+        Returns
+        -------
+        fig : TYPE
+            A plt.Figure containing a single axes.
+        ax : TYPE
+            The axes object of such plt.Figure.
         """
+
         fig, ax = plt.subplots(1, 1, 
                                figsize=self.figure_size, 
                                dpi=self.figure_dpi)
@@ -1049,12 +1049,20 @@ class VTKPlotter:
 
     def _setup_colorbar(self, fig: plt.Figure, ax: plt.Axes, mappable) -> None:
         """
-        Setup colorbar for the plot.
-        
-        Args:
-            fig (plt.Figure): Matplotlib figure
-            ax (plt.Axes): Matplotlib axes
-            mappable: Mappable object for colorbar
+        Adds a colorbar to the right of an axis using an existing mappable.
+
+        Parameters
+        ----------
+        fig : plt.Figure
+            The plt.Figure to which the colorbar should be added.
+        ax : plt.Axes
+            The plt.Axes to the right of which the colorbar should be added.
+        mappable : TYPE
+            The mappable object from which the colorbar will be constructed.
+
+        Returns
+        -------
+        None
         """
         cax = fig.add_axes([ax.get_position().x1 + 0.03,
                            ax.get_position().y0,
@@ -1073,7 +1081,24 @@ class VTKPlotter:
         cax.set_ylabel(f'{self.pcolor_key} in {self.pcolor_units}',
                        fontsize=self.figure_labelfontsize)
         
-    def _adjust_axes(self, fig: plt.Figure, ax: plt.Axes) -> None:
+    def _adjust_axes(self, ax: plt.Axes) -> None:
+    # def _adjust_axes(self, fig: plt.Figure, ax: plt.Axes) -> None:
+        """
+        Changes the figure ax by adding grid and adjusting ticks.
+
+        Parameters
+        ----------
+        fig : plt.Figure
+            The plt.Figure to be adjusted.
+        ax : plt.Axes
+            The axes of such figure which is to be adjusted.
+
+        Returns
+        -------
+        None
+            DESCRIPTION.
+
+        """
         """
         Changes the figure ax by adding grid and adjusting ticks.
         
@@ -1111,6 +1136,13 @@ class VTKPlotter:
                     alpha=0.5)
     
     def auto_filename(self):
+        """
+        Defines a default filename from the keys used in the figure.
+
+        Returns
+        -------
+        fig_filename : str
+        """
         key_list = [self.pcolor_key, 
                     self.contour_key, 
                     self.quiver_u_key, 
@@ -1122,10 +1154,18 @@ class VTKPlotter:
     
     def _finalize_figure(self, fig: plt.Figure, ax: plt.Axes) -> None:
         """
-        Finalize the figure by a suptitle and saving.
-        
-        Args:
-            ax (plt.Axes): Matplotlib axes to finalize
+        Finalizes the figure by aadding a suptitle and saving.
+
+        Parameters
+        ----------
+        fig : plt.Figure
+            The plt.Figure to be finalized.
+        ax : plt.Axes
+            The axes of such figure to which the title to be added.
+
+        Returns
+        -------
+        None
         """
         
         # Add title at the bottom
@@ -1149,6 +1189,10 @@ class VTKPlotter:
             return(fig, ax)
             
     def updated_rectangle_args(self):
+        """
+        Updates the contents of self.rectangle_positions to make it usable
+        """
+
         if self.rectangle_positions is None :   
             new_rectangle_positions = []
         elif isinstance(self.rectangle_positions, (list, tuple)) and len(self.rectangle_positions) == 4 and all(isinstance(x, (int, float)) for x in self.rectangle_positions):
@@ -1179,6 +1223,17 @@ class VTKPlotter:
     
     @property
     def zoomed_plotters(self):
+        """
+        A property that permits to select new plotters from the different 
+        zoomed subzones. The default filename for such plots are :
+            self.figure_filename + '_zoom_' 'Number of the subzones'
+
+        Returns
+        -------
+        list_plotters : List
+            A list of new plotters which are deep copies of the current plotter
+            zoomed on each of the self.updated_rectangle_args().
+        """
         
         new_rectangle_positions, new_rectangle_colors, new_rectangle_linewidths = self.updated_rectangle_args()
         
@@ -1205,10 +1260,13 @@ class VTKPlotter:
     def dash_patterns(self) -> typing.List:
         """
         Custom dash patterns.
-    
-        Returns:
-        list: List of as many custom dash patterns as self.contour_levels.
+
+        Returns
+        -------
+        dash_patterns : List
+            List of as many custom dash patterns as self.contour_levels.
         """
+
         N = self.contour_levels
         dash_patterns = []
         for i in range(N):
@@ -1227,13 +1285,21 @@ class VTKPlotter:
                        cell_data: typing.Dict) -> None:
         """
         Plot quad cell data.
-        
-        Args:
-            time_step (int): Current time step
-            center_grid_X (np.ndarray): Grid X coordinates
-            center_grid_Y (np.ndarray): Grid Y coordinates
-            cell_data (Dict): Dictionary of cell data
+
+        Parameters
+        ----------
+        center_grid_X : np.ndarray
+            Grid X coordinates.
+        center_grid_Y : np.ndarray
+            Grid Y coordinates.
+        cell_data : typing.Dict
+            Dictionary of cell data.
+
+        Returns
+        -------
+        None
         """
+        
         fig, ax = self._setup_figure()
         
         # Plot SSH   
@@ -1289,7 +1355,8 @@ class VTKPlotter:
         
         
         # Adjust the axes and grid looks
-        self._adjust_axes(fig, ax)
+        # self._adjust_axes(fig, ax)
+        self._adjust_axes(ax)
         
         # Add the colorbar if any
         if self.pcolor_key:
@@ -1309,13 +1376,23 @@ class VTKPlotter:
                            cell_centers_array: np.ndarray) -> None:
         """
         Plot triangle cell data.
-        
-        Args:
-            tripcolor_tri (mpl.tri.Triangulation): Triangulation for color plot
-            tricontour_tri (mpl.tri.Triangulation): Triangulation for contour plot
-            cell_data (Dict): Dictionary of cell data
-            cell_centers_array (np.ndarray): Cell center coordinates
+
+        Parameters
+        ----------
+        tripcolor_tri : mpl.tri.Triangulation
+            Triangulation for color plot.
+        tricontour_tri : mpl.tri.Triangulation
+            Triangulation for contour plot.
+        cell_data : Dict
+            Dictionary of cell data.
+        cell_centers_array : np.ndarray
+            Cell center coordinates.
+
+        Returns
+        -------
+        None
         """
+        
         fig, ax = self._setup_figure()
         
         # Plot SSH   
@@ -1381,7 +1458,8 @@ class VTKPlotter:
                 ax.add_patch(rect)
                 
         # Adjust the axes and grid looks
-        self._adjust_axes(fig, ax)
+        # self._adjust_axes(fig, ax)
+        self._adjust_axes(ax)
         
         # Add the colorbar if any
         if self.pcolor_key:
@@ -1395,6 +1473,19 @@ class VTKPlotter:
             return(fig, ax)
     
     def Plot(self, processor):
+        """
+        
+
+        Parameters
+        ----------
+        processor : TYPE
+            DESCRIPTION.
+
+        Returns
+        -------
+        None.
+
+        """
         
         print("       \033[32mOK:\033[0m Creating, plotting and saving")
         # Plot based on cell type
