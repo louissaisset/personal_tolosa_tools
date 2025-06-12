@@ -19,7 +19,7 @@ if [ ! `ls *_latlong.msh >& /dev/null; echo $status` ]; then
     fi
     
     # Utilisation de find pour récupérer seulement le premier fichier _latlong.msh
-    MESH_FILE=`find . -maxdepth 1 -name "*_latlong.msh" -type f | sort | head -1`
+    MESH_FILE=$(find . -maxdepth 1 -name "*_latlong.msh" -type f | sort | head -1)
     
     # Si il y a au moins un fichier .msh
     if [ "$MESH_FILE" != "" ]; then
