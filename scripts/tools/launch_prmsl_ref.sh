@@ -13,17 +13,17 @@ PRMSL_REF_EXE=/home/ext/sh/csho/saissetl/SOFTS/config_prep_tools/prmsl_ref/exe.p
 if [ ! `ls *_latlong.msh >& /dev/null; echo $status` ]; then
 
     # Ajout d'un warning si de multiples fichiers .msh existent dans le dossier
-    set txtCount = `find . -maxdepth 1 -name "*.msh" -type f | wc -l`
+    txtCount=$(find . -maxdepth 1 -name "*.msh" -type f | wc -l)
     if ($txtCount > 1) then
         echo -e "  \e[33mWARNING:\e[0m Multiple .msh files found"
     fi
     
     # Utilisation de find pour récupérer seulement le premier fichier .msh
     firstmshFile=`find . -maxdepth 1 -name "*.msh" -type f | sort | head -1`
-    echo $firstmshFile
+    echo -e "$firstmshFile \n"
 
     # Si il y a au moins un fichier .msh
-    if ("$firstmshFile" != ""); then
+    if [ "$firstmshFile" != "" ]; then
         
         # Récupération du chemin absolu
 	MSH_FILE=$(realpath $firstmshFile)
