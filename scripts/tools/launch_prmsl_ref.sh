@@ -22,7 +22,7 @@ if [ ! `ls *_latlong.msh >& /dev/null; echo $status` ]; then
     MESH_FILE=$(find . -maxdepth 1 -name "*_latlong.msh" -type f | sort | head -1)
     
     # Si il y a au moins un fichier .msh
-    if [ "$MESH_FILE" != "" ]; then
+    if [ -f "$MESH_FILE" ]; then
         echo -e "       \e[32mOK:\e[0m Found .msh file: $MSH_FILE"
 
     else
