@@ -9,7 +9,7 @@ WORKING_DIR=$(pwd)
 INTERP_TIDE_PATH="/home/ext/sh/csho/saissetl/SAVE/SOFTS/config_prep_tools/global_tide"  # HARD-CODED PATH - Replace with actual path
 OUTPUT_PATH="${WORKING_DIR}"
 MESH_FILE=""
-FORCING_PATH="~/DATA/CONFIG_DATA/fes2022b_elevations_34_tidal_constituents/"
+FORCING_PATH="/home/ext/sh/csho/saissetl/DATA/CONFIG_DATA/fes2022b_elevations_34_tidal_constituents/"
 
 # Function to display usage information
 usage() {
