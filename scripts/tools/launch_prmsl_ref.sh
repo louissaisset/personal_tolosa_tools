@@ -53,9 +53,9 @@ if [ ! -f "$PRMSL_REF_EXE" ]; then
 fi
 
 # Create symbolic link to the ERA5 data
-ln -sf $REF_ATM_PRES_FILE $CURRENT_DIR/mean_ERA5_2010-2019.nc
+ln -sf $REF_ATM_PRES_FILE mean_ERA5_2010-2019.nc
 echo -e "       \e[32mOK:\e[0m Created a symbolic link towards $REF_ATM_PRES_FILE"
-ln -sf $PRMSL_REF_EXE $CURRENT_DIR/prmsl_ref_exe
+ln -sf $PRMSL_REF_EXE prmsl_ref_exe
 echo -e "       \e[32mOK:\e[0m Created a symbolic link towards $PRMSL_REF_EXE"
 
 # Define the content of the config.yaml file
