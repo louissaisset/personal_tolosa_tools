@@ -20,8 +20,7 @@ if [ ! `ls *_latlong.msh >& /dev/null; echo $status` ]; then
     
     # Utilisation de find pour récupérer seulement le premier fichier .msh
     firstmshFile=`find . -maxdepth 1 -name "*.msh" -type f | sort | head -1`
-    echo -e "$firstmshFile \n"
-
+    
     # Si il y a au moins un fichier .msh
     if [ "$firstmshFile" != "" ]; then
         
