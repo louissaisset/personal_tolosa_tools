@@ -63,9 +63,35 @@ def main():
     txt_info_files = sorted(list(ptt.InfoTxtReader.search(current_path)))
     bin_data_files = sorted(list(ptt.DataBinReader.search(current_path)))
     bin_mesh_files = sorted(list(ptt.MeshBinReader.search(current_path)))
+    ptt.p_ok(f"Supported filenames for binary data:")
+    if len(txt_info_files) == 0:
+        ptt.p_error(f"Info file: {txt_info_files}")
+    elif len(txt_info_files) == 1:
+        ptt.p_ok(f"Info file: {txt_info_files}")
+    else:
+        ptt.p_warning(f"Info file: {txt_info_files}")
+    if len(bin_data_files) == 0:
+        ptt.p_error(f"Data files: {bin_data_files}")
+    elif len(bin_data_files) == 1:
+        ptt.p_ok(f"Data files: {bin_data_files}")
+    else:
+        ptt.p_warning(f"Data files: {bin_data_files}")
+    if len(bin_mesh_files) == 0:
+        ptt.p_error(f"Mesh files: {bin_mesh_files}")
+    elif len(bin_mesh_files) == 1:
+        ptt.p_ok(f"Mesh files: {bin_mesh_files}")
+    else:
+        ptt.p_warning(f"Mesh files: {bin_mesh_files}")
     
     # Needed for VTK plots
-    vtk_data_files = sorted(list(ptt.DataVTKReader.search(current_path)))
+    vtk_diag_files = sorted(list(ptt.DiagVTKReader.search(current_path)))
+    ptt.p_ok(f"Supported filenames for vtk data:")
+    if len(vtk_diag_files) == 0:
+        ptt.p_error(f"Diagnostic files: {vtk_diag_files}")
+    elif len(vtk_diag_files) == 1:
+        ptt.p_ok(f"Diagnostic files: {vtk_diag_files}")
+    else:
+        ptt.p_warning(f"Diagnostic files: {vtk_diag_files}")
     
     # Instantiate the reader
     file_rdr = ptt.FileReader()
@@ -93,11 +119,11 @@ def main():
         
         # processor.cell_data['radiusratio'] = processor.compute_radiusratio()
         
-    elif len(vtk_data_files) > 0:
-        data = file_rdr.read_file(current_path, vtk_data_files[0])
+    elif len(vtk_diag_files) > 0:
+        data = file_rdr.read_file(current_path, vtk_diag_files[0])
         # Processdata
         processor = ptt.VTKDataProcessor(data)
-        # processor.cell_data['radiusratio'] = processor.compute_radiusratio()
+        processor.cell_data['radiusratio'] = processor.compute_radiusratio()
     else:
         sys.exit()
     

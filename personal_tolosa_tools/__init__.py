@@ -15,7 +15,7 @@ from .readers import BinReader, DataBinReader, ConcatDataBinReader
 from .readers import GmshElementBinReader, MeshBinReader
 from .readers import LonLatDegBinReader, LonLatRadBinReader
 from .readers import TxtReader, InfoTxtReader, DataMinMaxTxtReader
-from .readers import VTKReader, DataVTKReader
+from .readers import VTKReader, DataVTKReader, DiagVTKReader
 from .readers import TecplotReader, DataTecplotReader
 # OLD NAMES
 # from .readers import VTKDataReader
@@ -52,7 +52,7 @@ __all__ = [
     'GmshElementBinReader', 'MeshBinReader',
     'LonLatDegBinReader', 'LonLatRadBinReader',
     'TxtReader', 'InfoTxtReader', 'DataMinMaxTxtReader',
-    'VTKReader', 'DataVTKReader',
+    'VTKReader', 'DataVTKReader', 'DiagVTKReader',
     'TecplotReader', 'DataTecplotReader',
     # 'FileReader', 'WhichReader', 'VTKDataReader',
     # 'LonLatDeg', 'LonLatRad', 'BinReader', 'GmshElement', 'Data', 'Mesh',

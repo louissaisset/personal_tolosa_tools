@@ -624,7 +624,8 @@ class DataMinMaxTxtReader(TxtReader):
 class VTKReader(Reader):
     """
     """
-    PATTERN = re.compile(r"^([a-z_]*)(?:_(?P<num>\d{6}))?\.vtk$")
+    # PATTERN = re.compile(r"^([a-z_]*)(?:_(?P<num>\d{6}))?\.vtk$")
+    PATTERN = re.compile(r"^.*\.vtk$")
 
     def __init__(self, path :str, filename :str):
         """_summary_
@@ -674,6 +675,38 @@ class DataVTKReader(VTKReader):
         except FileNotFoundError:
             logging.error("%s doesn\'t exist", os.path.join(self.path, self.filename))
     
+class DiagVTKReader(VTKReader):
+    """
+    """
+    PATTERN = re.compile(r"^.*\_diag*\.vtk$")
+
+    def __init__(self, path :str, filename :str):
+        """_summary_
+
+        Args:
+            path (str): _description_
+            filename (str): _description_
+        """
+        self.path = path
+        self.filename = filename
+
+
+    def read(self, **kwargs):
+        """
+        Returns a vtk.vtkUnstructuredGrid object to be processed separately
+        """
+        try:
+            reader = vtk.vtkUnstructuredGridReader()
+            
+            reader.SetFileName(os.path.join(self.path, self.filename))
+            
+            reader.ReadAllVectorsOn()
+            reader.ReadAllScalarsOn()
+            reader.Update()
+            
+            return reader.GetOutput()
+        except FileNotFoundError:
+            logging.error("%s doesn\'t exist", os.path.join(self.path, self.filename))
     
 class TecplotReader(Reader):
     """
@@ -707,6 +740,7 @@ class WhichReader():
                          ('txt', 'data_minmax') : DataMinMaxTxtReader,
                          #('vtk', 'default') : VTKReader,
                          ('vtk', 'data') : DataVTKReader,
+                         ('vtk', 'diag') : DiagVTKReader,
                          #('plt', 'default') : TecplotReader,
                          ('plt', 'data') : DataTecplotReader}
         
