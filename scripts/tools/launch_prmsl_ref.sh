@@ -14,7 +14,7 @@ if [ ! `ls *_latlong.msh >& /dev/null; echo $status` ]; then
 
     # Ajout d'un warning si de multiples fichiers .msh existent dans le dossier
     txtCount=$(find . -maxdepth 1 -name "*.msh" -type f | wc -l)
-    if ($txtCount > 1) then
+    if [ $txtCount > 1 ]; then
         echo -e "  \e[33mWARNING:\e[0m Multiple .msh files found"
     fi
     

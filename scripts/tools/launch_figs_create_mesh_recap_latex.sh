@@ -4,6 +4,7 @@ echo -e "\nLaunching the tool for creating latex files from folder architecture.
 
 # Récupérer les dossiers qui suivent le motif ./Figures_BC_*
 dossiers=(./*/BC_*/Figures_BC_*)
+dossiers=(./B*/Figures_*)
 
 # Noms des types de données à grouper
 donnees=("mesh" "bathy" "radiusratio" "resolution")
