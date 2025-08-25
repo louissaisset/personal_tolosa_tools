@@ -62,6 +62,9 @@ class DataProcessor(ABC):
     
     def compute_cell_data_differences(self, other_processor) -> dict:
         
+        print(self.cell_data)
+        print(other_processor.cell_data)
+        
         # Check if the cell centers are the same in both datasets
         N_equal_cells = (self.cell_centers_array == other_processor.cell_centers_array).sum()
         if N_equal_cells != 3*self.num_cells:
