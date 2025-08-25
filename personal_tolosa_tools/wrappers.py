@@ -223,6 +223,7 @@ def plot_tri_data_comparison(plotter, process_type, args1, args2):
     
     
     cell_data_diff = processor1.compute_cell_data_differences(processor2)
+    print(cell_data_diff)
     tripcolor_tri, tricontour_tri = processor1.compute_triangulations()
     plotter.plot_triangle_data(tripcolor_tri, 
                                tricontour_tri,
