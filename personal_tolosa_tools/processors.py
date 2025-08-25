@@ -66,7 +66,6 @@ class DataProcessor(ABC):
         N_equal_cells = (self.cell_centers_array == other_processor.cell_centers_array).sum()
         if N_equal_cells != 3*self.num_cells:
             p_warning("The cell centers do not match between the two datasets.")
-            return {}
         if self.numcells == other_processor.num_cells:
             p_error("The cell centers do not match between the two datasets.")
             return {}
