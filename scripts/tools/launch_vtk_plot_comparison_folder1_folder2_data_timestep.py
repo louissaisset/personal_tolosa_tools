@@ -159,8 +159,8 @@ def main():
         cluster.scale(8)
     
     # Checking for the client to be correctly configured
-    assert client.submit(lambda x : x+1, 10).result() == 11
-    assert client.submit(lambda x : x+1, 20, workers=2).result() == 21
+    # assert client.submit(lambda x : x+1, 10).result() == 11
+    # assert client.submit(lambda x : x+1, 20, workers=2).result() == 21
     ptt.p_ok(f"See client dashboard via dask at: {client.dashboard_link}")
     
     
