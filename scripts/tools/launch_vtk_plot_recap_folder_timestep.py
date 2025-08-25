@@ -118,19 +118,19 @@ def main():
     # plotter.quiver_lengthkey = 1 
     plotter.quiver_lengthkey = 1/quiverscale
     plotter.contour_linewidths = 0.2
-#    plotter.rectangle_positions = [(-10000, -3000, -4000, 1000), 
-#                                   (-7000, -2000, 4500, 8500), 
-#                                   (-17000, -12000, -10000, -5000), 
-#                                   (-1000, 4000, -2000, 2000)]
-#    plotter.rectangle_colors = 'k'
-#    new_figsize_list = [(4,4),
-#                        (3.5,3.5),
-#                        (3,3),
-#                        (3.5,3.5)]
-#    new_filename_list = ['zoom_ilelongue',
-#                         'zoom_port',
-#                         'zoom_pointepenhir',
-#                         'zoom_bassinest']
+    plotter.rectangle_positions = [(-10000, -3000, -4000, 1000), 
+                                   (-7000, -2000, 4500, 8500), 
+                                   (-17000, -12000, -10000, -5000), 
+                                   (-1000, 4000, -2000, 2000)]
+    plotter.rectangle_colors = 'k'
+    new_figsize_list = [(4,4),
+                        (3.5,3.5),
+                        (3,3),
+                        (3.5,3.5)]
+    new_filename_list = ['zoom_ilelongue',
+                         'zoom_port',
+                         'zoom_pointepenhir',
+                         'zoom_bassinest']
     
     # Keep the original file name in memory
     old_filename = plotter.auto_filename()
@@ -179,14 +179,14 @@ def main():
         plotter.quiver_scale = quiverscale
         delayed_plot += [ptt.plot_data_plotter(deepcopy(plotter), *step)]
         
-#        # Iterate over the zoom zones and delay the corresponding figure plotting
-#        for newplotter, new_filename, new_figsize in zip(plotter.zoomed_plotters, new_filename_list, new_figsize_list):
-#            newplotter.figure_filename = '_'.join([old_filename, f'{new_filename}', f"{t:05d}"])
-#            newplotter.figure_size = new_figsize
-#            newplotter.quiver_spacing = int(20/factor)
-#            # newplotter.quiver_scale = 15
-#            newplotter.quiver_scale = quiverscale
-#            delayed_plot += [ptt.plot_data_plotter(deepcopy(newplotter), *step)]
+        # Iterate over the zoom zones and delay the corresponding figure plotting
+        for newplotter, new_filename, new_figsize in zip(plotter.zoomed_plotters, new_filename_list, new_figsize_list):
+            newplotter.figure_filename = '_'.join([old_filename, f'{new_filename}', f"{t:05d}"])
+            newplotter.figure_size = new_figsize
+            newplotter.quiver_spacing = int(20/factor)
+            # newplotter.quiver_scale = 15
+            newplotter.quiver_scale = quiverscale
+            delayed_plot += [ptt.plot_data_plotter(deepcopy(newplotter), *step)]
     
     # Ask for the computing and saving of such figures
     dask.compute(*delayed_plot)

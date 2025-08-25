@@ -77,7 +77,7 @@ def main():
     if len(args.args) >= 5:
         maxval = args.args[4]
     if len(args.args) >= 6:
-        maxval = args.args[5]
+        BCtype = args.args[5]
     
     # Override with kwargs if provided
     if args.folder1 is not None:
