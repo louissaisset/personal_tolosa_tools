@@ -67,10 +67,9 @@ class DataProcessor(ABC):
         if N_equal_cells != 3*self.num_cells:
             p_warning("The cell centers do not match between the two datasets.")
         if self.num_cells != other_processor.num_cells:
-            p_error("The cell centers do not match between the two datasets.")
+            p_error("The two data sources do not match cell number.")
             return {}
         
-    
         # Extract cell data
         cell_data1 = self.cell_data
         cell_data2 = other_processor.cell_data
