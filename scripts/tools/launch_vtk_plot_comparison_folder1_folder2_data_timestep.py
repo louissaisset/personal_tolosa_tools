@@ -148,7 +148,7 @@ def main():
     # Creating the local cluster
     if os.uname()[1].startswith('belenos'):
         # cluster = SLURMRunner()
-        cluster = LocalCluster(n_workers=2, threads_per_worker=1)
+        cluster = LocalCluster(n_workers=128, threads_per_worker=1)
     else:
         cluster = LocalCluster(n_workers=8, threads_per_worker=1)
     
