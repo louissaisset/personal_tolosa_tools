@@ -302,7 +302,7 @@ if __name__ == "__main__":
 
     # extract_grib_subdomain_eccodes(input_grib, output_grib, min_latitude, max_latitude,
     #                                min_longitude, max_longitude)
-    
+
     import xarray as xr
     from cfgrib.xarray_to_grib import to_grib
     A = xr.open_dataset(input_grib, engine='cfgrib')
@@ -311,3 +311,22 @@ if __name__ == "__main__":
     to_grib(A, output_grib)
     
     B = xr.open_dataset(output_grib, engine='cfgrib')
+    
+    
+    
+    import xarray as xr
+    from cfgrib.xarray_to_grib import to_grib
+    
+    # Define your parameters
+    # input_grib = "/local/home/lsaisset/DATA/CONFIG_DATA/grib/ATL/pmer_u10_v10_20210401_20240930_corrected.grib"
+    input_grib = "/local/home/lsaisset/DATA/CONFIG_DATA/grib/ATL/vent_arpege_anaMAN.20090121-26.ATL.grb"
+    output_grib = "/local/home/lsaisset/DATA/CONFIG_DATA/grib/ATL/test.grib"
+    
+    A = xr.open_dataset(input_grib, engine='cfgrib')
+    
+    to_grib(A, output_grib, grib_keys={'msl':A.msl, 'u':A.u10, 'v':A.v10})
+    to_grib(A, output_grib)
+    
+    B = xr.open_dataset(output_grib, engine='cfgrib')
+    
+    

@@ -34,31 +34,31 @@ from pathlib import Path
 import argparse
 
 def main():
-    
+
     # Read args and kwargs
     parser = argparse.ArgumentParser(description="A small python script to generate matplotlib figures of a tolosa mesh using the informations of the first '.vtk' file found inside the current path")
     # Parse arguments
     args = parser.parse_args()
-    
-    
+
+
     print("\nBeginning script for plotting the grid info from the diag.vtk file...")
-    
+
     # Initialize parameters
     current_path = Path.cwd()
     ptt.p_ok(f"Launched from : {current_path}")
-    
+
     output_dir = str((current_path / f'Figures_{current_path.name}').resolve())
     ptt.p_ok(f"Defined Figure folder : {output_dir}")
-    
+
     current_path = str(current_path)
-    
+
     # Instantiate Reader Class
     # reader = ptt.VTKDataReader(current_path)
-    
+
     # New version using Roman's method
     supported_filenames = sorted(list(ptt.Reader.search(current_path)))
     ptt.p_ok(f"Supported filenames for reader: {supported_filenames}")
-    
+
     # Needed for Binary plots
     txt_info_files = sorted(list(ptt.InfoTxtReader.search(current_path)))
     bin_data_files = sorted(list(ptt.DataBinReader.search(current_path)))
