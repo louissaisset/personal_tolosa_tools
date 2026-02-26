@@ -1,7 +1,6 @@
 """Modules"""
 
 from .common import p_filter_args, p_strip_None
-
 import os
 import re
 import logging
@@ -12,11 +11,15 @@ import pandas as pd
 
 # Ajouts Louis
 import vtk
-
+from vtk.util.numpy_support import vtk_to_numpy
+from meshio import read as readmesh
+from meshio import Mesh
 
 # strategy factory pattern ?
 class Reader(ABC):
-    PATTERN = re.compile(r"^(?P<name>[a-z_]*)(?:_(?P<num>\d{6}))?\.(?P<ext>bin|txt|vtk|plt)$")
+    # PATTERN = re.compile(r"^(?P<name>[a-z_]*)(?:_(?P<num>\d{6}))?\.(?P<ext>bin|txt|vtk|plt|msh)$")
+    PATTERN = re.compile(r"^.*\.(?P<ext>bin|txt|vtk|plt|msh)$")
+                         
 
     @abstractmethod
     def read(self, **kwargs):
@@ -38,6 +41,7 @@ class Reader(ABC):
     @_search
     def search(cls, filename :str) -> bool:
         return cls.test_filename(filename)
+    
     
 
 # default class reader
@@ -71,7 +75,8 @@ class BinReader(Reader):
         """
         
         _key_options = {0 : {'date_written': False, 'minmax_written': False},
-                        1 : {'date_written': False, 'minmax_written': True}, # if min / max values of each field written at the beginning of each time step
+                        1 : {'date_written': False, 'minmax_written': True}, # if min / max values of each field written at the beginning 
+                                                                             # of each time step
                         2 : {'date_written': True, 'minmax_written': False}, # if date written at the beginning of each time step
                         3 : {'date_written': True, 'minmax_written': True}}
         try:
@@ -146,7 +151,8 @@ class BinReader(Reader):
                   
         try:
             with open(os.path.join(self.path, self.filename), 'rb') as file:
-                return(np.fromfile(file, **p_filter_args(np.fromfile, kwargs)))
+                data = np.fromfile(file, **p_filter_args(np.fromfile, kwargs))
+                return data
         except FileNotFoundError:
             logging.error("%s doesn\'t exist", os.path.join(self.path, self.filename))
             raise FileNotFoundError
@@ -164,14 +170,7 @@ class DataBinReader(BinReader):
     PATTERN = re.compile(r"^.*(?P<num>\d{6})\.bin$")
 
     def __init__(self, path :str, filename :str):
-        """_summary_
-
-        Args:
-            path (str): _description_
-            filename (str): _description_
-        """
-        self.path = path
-        self.filename = filename
+        super().__init__(path, filename)
 
     def _read(self, file, variables :list, count :int =-1):
         """
@@ -203,7 +202,21 @@ class DataBinReader(BinReader):
         # variables = kwargs.pop(arg) # get value and delete key
         try:
             with open(os.path.join(self.path, self.filename), 'rb') as file:
-                return(self._read(file, variables=variables))
+                data = self._read(file, variables=variables)
+                
+                npdata = data[list(data.keys())[0]]
+                ncells = npdata.shape[-1]
+                
+                cell_data = {}
+                for i in range(npdata.shape[0]):
+                    cell_data[variables[i]] = [npdata[i].squeeze()]
+                    
+                cells = {'triangle': np.zeros((ncells, 3))}
+                
+                mesh = Mesh(points=[], 
+                                   cells=cells,
+                                   cell_data=cell_data)
+                return {list(data.keys())[0]: mesh}
             
         except FileNotFoundError:
             logging.error("%s doesn\'t exist", os.path.join(self.path, self.filename))
@@ -246,7 +259,26 @@ class ConcatDataBinReader(DataBinReader):
         try:
             with open(os.path.join(self.path, self.filename), 'rb') as file:
                 file.seek(offset)
-                return(self._read(file, variables=variables, count=count))
+                
+                datadict = self._read(file, variables=variables, count=count)
+                
+                dict_meshes = {}
+                for date, data in datadict.items():
+                    npdata = data[list(data.keys())[0]]
+                    ncells = npdata.shape[-1]
+                    
+                    cell_data = {}
+                    for i in range(npdata.shape[0]):
+                        cell_data[variables[i]] = [npdata[i].squeeze()]
+                        
+                    cells = {'triangle': np.zeros((ncells, 3))}
+                    
+                    mesh = Mesh(points=[], 
+                                       cells=cells,
+                                       cell_data=cell_data)
+                    dict_meshes[date] = mesh
+                    
+                return dict_meshes
                 
         except FileNotFoundError:
             logging.error("%s doesn\'t exist", os.path.join(self.path, self.filename))
@@ -331,14 +363,7 @@ class GmshElementBinReader(BinReader):
     VARIABLES = ['gmsh_element']
 
     def __init__(self, path :str, filename :str):
-        """_summary_
-
-        Args:
-            path (str): _description_
-            filename (str): _description_
-        """
-        self.path = path
-        self.filename = filename
+        super().__init__(path, filename)
     
     def read(self):
         """_summary_
@@ -357,8 +382,12 @@ class GmshElementBinReader(BinReader):
                     
                 if self.minmax_written:
                     self._minmax(file, variables=GmshElementBinReader.VARIABLES)
-
-                return self._data(file, dtype='i4')
+                
+                data = self._data(file, dtype='i4')
+                mesh = Mesh(points=np.zeros((len(data), 3)),
+                                   cells={}, 
+                                   point_data={'node_mapping': data})
+                return mesh
         except FileNotFoundError:
             logging.error("%s doesn\'t exist", os.path.join(self.path, self.filename))
             raise FileNotFoundError
@@ -380,14 +409,7 @@ class LonLatDegBinReader(BinReader):
     VARIABLES = ['lon', 'lat']
 
     def __init__(self, path :str, filename :str):
-        """_summary_
-
-        Args:
-            path (str): _description_
-            filename (str): _description_
-        """
-        self.path = path
-        self.filename = filename
+        super().__init__(path, filename)
     
     def read(self):
         """Read *_lon_lat_degrees.bin file
@@ -408,7 +430,12 @@ class LonLatDegBinReader(BinReader):
                     self._minmax(file, variables=LonLatDegBinReader.VARIABLES)
 
                 self.lon_lat = self._data(file, dtype='f4').reshape(2, -1)
-                return self.lon_lat
+                
+                xyz = np.zeros((3, self.lon_lat.shape[1]))
+                xyz[:2,:] = self.lon_lat
+                mesh = Mesh(points=xyz.T, 
+                                   cells={})
+                return mesh
         
         except FileNotFoundError:
             logging.error("%s doesn\'t exist", os.path.join(self.path, self.filename))
@@ -431,14 +458,7 @@ class LonLatRadBinReader(BinReader):
     VARIABLES = ['lon', 'lat']
 
     def __init__(self, path :str, filename :str):
-        """_summary_
-
-        Args:
-            path (str): _description_
-            filename (str): _description_
-        """
-        self.path = path
-        self.filename = filename
+        super().__init__(path, filename)
 
     def read(self):
         """_summary_
@@ -459,7 +479,12 @@ class LonLatRadBinReader(BinReader):
                     self._minmax(file, LonLatRadBinReader.VARIABLES)
 
                 self.lon_lat = self._data(file, dtype='f4').reshape(2, -1)
-                return self.lon_lat
+                
+                xyz = np.zeros((3, self.lon_lat.shape[1]))
+                xyz[:2,:] = self.lon_lat
+                mesh = Mesh(points=xyz.T, 
+                                   cells={})
+                return mesh
         
         except FileNotFoundError:
             logging.error("%s doesn\'t exist", os.path.join(self.path, self.filename))
@@ -478,14 +503,7 @@ class MeshBinReader(BinReader):
     PATTERN = re.compile(r"^.*(mesh)\.bin$")
 
     def __init__(self, path :str, filename :str):
-        """_summary_
-
-        Args:
-            path (str): _description_
-            filename (str): _description_
-        """
-        self.path = path
-        self.filename = filename
+        super().__init__(path, filename)
 
     def read(self):
         """_summary_
@@ -495,11 +513,16 @@ class MeshBinReader(BinReader):
         """
         try:
             with open(os.path.join(self.path, self.filename), 'rb') as file:
-                (self.num_nodes, self.num_cells) = np.fromfile(file, dtype='i4', count=2)
+                self.num_nodes, self.num_cells = np.fromfile(file, dtype='i4', count=2)
                 self.nodes = np.fromfile(file, dtype='f4', count=2*self.num_nodes).reshape(self.num_nodes, 2)
                 self.cells = np.fromfile(file, dtype='i4', count=4*self.num_cells).reshape(self.num_cells, 4) - 1 # numerotation starts at one
-
-            return {'num_nodes' : self.num_nodes, 'num_cells' : self.num_cells, 'nodes': self.nodes, 'cells' : self.cells}
+                
+                xyz = np.zeros((self.nodes.shape[0], 3))
+                xyz[:, :2] = self.nodes
+                
+                mesh = Mesh(points=xyz, cells={"triangle": self.cells[:, :3]})
+            return mesh
+        
         except FileNotFoundError:
                 logging.error("%s doesn\'t exist", os.path.join(self.path, self.filename))
     
@@ -547,14 +570,7 @@ class InfoTxtReader(TxtReader):
     PATTERN = re.compile(r"^.*(info)\.txt$")
 
     def __init__(self, path :str, filename :str):
-        """_summary_
-
-        Args:
-            path (str): _description_
-            filename (str): _description_
-        """
-        self.path = path
-        self.filename = filename
+        super().__init__(path, filename)
 
     def read(self):
         """_summary_
@@ -576,12 +592,14 @@ class InfoTxtReader(TxtReader):
             infos[match.group('filename')] = {'type' : match.group('type'),
                                               'num_nodes' : int(match.group('num_nodes')) if match.group('num_nodes') else None,
                                               'num_cells' : int(match.group('num_cells')) if match.group('num_cells') else None,
-                                              'variables' : [variable.strip() for variable in match.group('variables').split(',')] if match.group('variables') else None,
+                                              'variables' : [variable.strip() for variable in match.group('variables').split(',')] \
+                                                  if match.group('variables') else None,
                                               'num_elements' : int(match.group('num_elements')) if match.group("num_elements") else None,
                                               'date' : match.group('date') == 'yes' if match.group('date') else None,
                                               'start_date': match.group('start_date') if match.group('start_date') else None,
                                               'min_max' : match.group('min_max') == 'yes' if match.group('min_max') else None}#,
-                                            #   'concatenated' : True if re.search(r'timeseries', match.group('filename')) else (False if re.search(r'xxxxxx', match.group('filename')) else None)}
+                                            #   'concatenated' : True if re.search(r'timeseries', match.group('filename')) 
+                                            # else (False if re.search(r'xxxxxx', match.group('filename')) else None)}
         
         self.infos = p_strip_None(infos)
         return self.infos
@@ -596,14 +614,7 @@ class DataMinMaxTxtReader(TxtReader):
     PATTERN = re.compile(r"^.*(data_minmax)\.txt$")
 
     def __init__(self, path :str, filename :str):
-        """_summary_
-
-        Args:
-            path (str): _description_
-            filename (str): _description_
-        """
-        self.path = path
-        self.filename = filename
+        super().__init__(path, filename)
 
     def read(self, **kwargs) -> pd.DataFrame:
         """_summary_
@@ -619,95 +630,262 @@ class DataMinMaxTxtReader(TxtReader):
                                         sep=r"/s+", engine='python',
                                           **p_filter_args(pd.read_csv, kwargs))
         return self.data_minmax
-
-
-class VTKReader(Reader):
+    
+    
+class MeshIOReader(Reader):
     """
+    Base class for reading mesh files using meshio library.
+    Supports various mesh formats including .msh (Gmsh) and .vtk.
+    
+    Returns a meshio.Mesh object containing:
+        - points: array of node coordinates (N x 3)
+        - cells: list of cell blocks with connectivity
+        - point_data: dictionary of data defined at nodes
+        - cell_data: dictionary of data defined at cells
+        - field_data: dictionary of field metadata
     """
-    # PATTERN = re.compile(r"^([a-z_]*)(?:_(?P<num>\d{6}))?\.vtk$")
-    PATTERN = re.compile(r"^.*\.vtk$")
-
-    def __init__(self, path :str, filename :str):
-        """_summary_
-
+    PATTERN = re.compile(r"^.*\.(?P<ext>msh|vtk)$")
+    
+    def __init__(self, path: str, filename: str):
+        """
+        Initialize MeshIO reader.
+        
         Args:
-            path (str): _description_
-            filename (str): _description_
+            path (str): Directory path containing the file
+            filename (str): Name of the mesh file
         """
         self.path = path
         self.filename = filename
-
     
     def read(self, **kwargs):
-        raise NotImplementedError
+        """
+        Read mesh file using meshio.
+        
+        Returns:
+            meshio.Mesh: Mesh object containing geometry and data
+        """
+        try:
+            filepath = os.path.join(self.path, self.filename)
+            
+            # Read the mesh using meshio
+            mesh = readmesh(filepath, **kwargs)
+            
+            # Adding the projection if any
+            projection_wkt = None
+
+            with open(filepath, "r", encoding="utf-8", errors="ignore") as f:
+                in_projection = False
+                projection_lines = []
     
+                for line in f:
+                    line = line.strip()
+    
+                    if line == "$Projection":
+                        in_projection = True
+                        continue
+    
+                    if line == "$EndProjection":
+                        in_projection = False
+                        break
+    
+                    if in_projection:
+                        projection_lines.append(line)
+    
+            # Expected structure:
+            # $Projection
+            # WKT
+            # <actual WKT>
+            # $EndProjection
+            if projection_lines:
+                if projection_lines[0] == "WKT":
+                    projection_wkt = "\n".join(projection_lines[1:])
+                else:
+                    projection_wkt = "\n".join(projection_lines)
+    
+            # Attach to mesh
+            if projection_wkt:
+                mesh.field_data["projection_wkt"] = projection_wkt
+            
+            return mesh
+            
+        except FileNotFoundError:
+            logging.error(f"{filepath} doesn't exist")
+            raise FileNotFoundError
+        except Exception as e:
+            logging.error(f"Error reading mesh file: {str(e)}")
+            raise
+
+
+class MshReader(MeshIOReader):
+    """
+    Reader for Gmsh .msh files using meshio.
+    
+    Gmsh files contain:
+        - Node coordinates
+        - Element connectivity (triangles, quads, tetrahedra, etc.)
+        - Physical groups and tags
+        - Field data
+    """
+    PATTERN = re.compile(r"^.*\.msh$")
+    
+    def __init__(self, path: str, filename: str):
+        super().__init__(path, filename)
+
+
+class DataMshReader(MshReader):
+    """
+    Reader for data-containing Gmsh .msh files.
+    Specifically handles files with numerical output data.
+    """
+    PATTERN = re.compile(r"^.*(?P<num>\d{6})\.msh$")
+    
+    def __init__(self, path: str, filename: str):
+        super().__init__(path, filename)
+
+
+class VTKReader(MeshIOReader):
+    """
+    Reader for VTK files using meshio (alternative to vtk library).
+    """
+    PATTERN = re.compile(r"^.*\.vtk$")
+    
+    def __init__(self, path: str, filename: str):
+        super().__init__(path, filename)
+        
+    def getdata(self, **kwargs):
+        try:
+            reader = vtk.vtkUnstructuredGridReader()
+            reader.SetFileName(os.path.join(self.path, self.filename))
+            reader.ReadAllVectorsOn()
+            reader.ReadAllScalarsOn()
+            reader.Update()
+            ugrid = reader.GetOutput()
+            return ugrid
+
+        except FileNotFoundError:
+            logging.error("%s doesn\'t exist", os.path.join(self.path, 
+                                                            self.filename))
+        
+    def makedatameshio(self, ugrid, **kwargs):
+
+        VTK_TO_MESHIO = {
+            vtk.VTK_VERTEX: "vertex",
+            vtk.VTK_POLY_VERTEX: "vertex",
+            vtk.VTK_LINE: "line",
+            vtk.VTK_POLY_LINE: "line",
+            vtk.VTK_TRIANGLE: "triangle",
+            vtk.VTK_TRIANGLE_STRIP: "triangle",
+            vtk.VTK_POLYGON: "polygon",
+            vtk.VTK_PIXEL: "quad",
+            vtk.VTK_QUAD: "quad",
+            vtk.VTK_TETRA: "tetra",
+            vtk.VTK_VOXEL: "hexahedron",
+            vtk.VTK_HEXAHEDRON: "hexahedron",
+            vtk.VTK_WEDGE: "wedge",
+            vtk.VTK_PYRAMID: "pyramid",
+        }
+        # ---- Points ----
+        points = vtk_to_numpy(ugrid.GetPoints().GetData())
+
+        # ---- Cells + bookkeeping ----
+        cells = {}
+        cell_indices = {}  # map: cell_type -> original VTK cell indices
+
+        for i in range(ugrid.GetNumberOfCells()):
+            cell = ugrid.GetCell(i)
+            vtk_type = cell.GetCellType()
+
+            if vtk_type not in VTK_TO_MESHIO:
+                raise RuntimeError(f"Unsupported VTK cell type {vtk_type}")
+
+            cell_type = VTK_TO_MESHIO[vtk_type]
+            point_ids = [cell.GetPointId(j) for j in range(cell.GetNumberOfPoints())]
+
+            cells.setdefault(cell_type, []).append(point_ids)
+            cell_indices.setdefault(cell_type, []).append(i)
+
+        # Convert connectivity to numpy
+        cells = {k: np.asarray(v, dtype=int) for k, v in cells.items()}
+
+        # ---- Point data ----
+        point_data = {}
+        pd = ugrid.GetPointData()
+        for i in range(pd.GetNumberOfArrays()):
+            arr = pd.GetArray(i)
+            point_data[arr.GetName()] = vtk_to_numpy(arr)
+
+        # ---- Cell data (correctly grouped) ----
+        cell_data = {}
+        cd = ugrid.GetCellData()
+
+        for i in range(cd.GetNumberOfArrays()):
+            arr = cd.GetArray(i)
+            name = arr.GetName()
+            data = vtk_to_numpy(arr)
+
+            cell_data[name] = [
+                data[cell_indices[cell_type]]
+                for cell_type in cells.keys()
+            ]
+
+        return Mesh(
+            points=points,
+            cells=cells,
+            point_data=point_data,
+            cell_data=cell_data,
+        )
+    
+    def read(self, **kwargs):
+        """
+        Read mesh file using either meshio or vtk (converted to meshio.Mesh).
+        
+        Returns:
+            meshio.Mesh: Mesh object containing geometry and data
+        """
+        try:
+            filepath = os.path.join(self.path, self.filename)
+            
+            # Read the mesh using meshio
+            mesh = readmesh(filepath, **kwargs)
+            return mesh
+            
+        except FileNotFoundError:
+            logging.error(f"{filepath} doesn't exist")
+            raise FileNotFoundError
+            
+        except:
+            logging.warning("Error reading mesh file using meshio")
+            logging.warning("Using vtk instead")
+            try:
+                ugrid = self.getdata()
+                mesh = self.makedatameshio(ugrid)
+                return mesh
+            except:
+                logging.error("Error reading mesh file using vtk")
+
 
 class DataVTKReader(VTKReader):
     """
+    Reader for data-containing VTK files using meshio.
+    Specifically handles files with numerical output data.
     """
     PATTERN = re.compile(r"^.*(\d{6})\.vtk$")
-
-    def __init__(self, path :str, filename :str):
-        """_summary_
-
-        Args:
-            path (str): _description_
-            filename (str): _description_
-        """
-        self.path = path
-        self.filename = filename
-
-
-    def read(self, **kwargs):
-        """
-        Returns a vtk.vtkUnstructuredGrid object to be processed separately
-        """
-        try:
-            reader = vtk.vtkUnstructuredGridReader()
-            
-            reader.SetFileName(os.path.join(self.path, self.filename))
-            
-            reader.ReadAllVectorsOn()
-            reader.ReadAllScalarsOn()
-            reader.Update()
-            
-            return reader.GetOutput()
-        except FileNotFoundError:
-            logging.error("%s doesn\'t exist", os.path.join(self.path, self.filename))
     
+    def __init__(self, path: str, filename: str):
+        super().__init__(path, filename)
+
+
 class DiagVTKReader(VTKReader):
     """
+    Reader for data-containing VTK files using meshio.
+    Specifically handles files with the diagnostic output data.
     """
     PATTERN = re.compile(r"^.*\_diag*\.vtk$")
-
-    def __init__(self, path :str, filename :str):
-        """_summary_
-
-        Args:
-            path (str): _description_
-            filename (str): _description_
-        """
-        self.path = path
-        self.filename = filename
-
-
-    def read(self, **kwargs):
-        """
-        Returns a vtk.vtkUnstructuredGrid object to be processed separately
-        """
-        try:
-            reader = vtk.vtkUnstructuredGridReader()
-            
-            reader.SetFileName(os.path.join(self.path, self.filename))
-            
-            reader.ReadAllVectorsOn()
-            reader.ReadAllScalarsOn()
-            reader.Update()
-            
-            return reader.GetOutput()
-        except FileNotFoundError:
-            logging.error("%s doesn\'t exist", os.path.join(self.path, self.filename))
     
+    def __init__(self, path: str, filename: str):
+        super().__init__(path, filename)
+
+
 class TecplotReader(Reader):
     """
     """
@@ -728,21 +906,24 @@ class DataTecplotReader(Reader):
 
 class WhichReader():
     def __init__(self): 
-        self._readers = {#('bin', 'default') : BinReader,
-                         ('bin', 'data') : DataBinReader,
+        self._readers = {('bin', 'data') : DataBinReader,
                          ('bin', 'concat_data') : ConcatDataBinReader,
                          ('bin', 'gmsh_element') : GmshElementBinReader,
                          ('bin', 'lon_lat_degrees') : LonLatDegBinReader,
                          ('bin', 'lon_lat_radians') : LonLatRadBinReader,
                          ('bin', 'mesh') : MeshBinReader,
-                         #('txt', 'default') : TxtReader,
+                         #('bin', 'default') : BinReader,
                          ('txt', 'info') : InfoTxtReader,
                          ('txt', 'data_minmax') : DataMinMaxTxtReader,
-                         #('vtk', 'default') : VTKReader,
+                         #('txt', 'default') : TxtReader,
+                         ('msh', 'data') : DataMshReader,
+                         ('msh', 'default') : MshReader,
                          ('vtk', 'data') : DataVTKReader,
                          ('vtk', 'diag') : DiagVTKReader,
+                         ('vtk', 'default') : VTKReader,
+                         ('plt', 'data') : DataTecplotReader
                          #('plt', 'default') : TecplotReader,
-                         ('plt', 'data') : DataTecplotReader}
+                         }
         
     def get_reader(self, filename :str, readername :str=None):
         """_summary_
@@ -779,6 +960,8 @@ class FileReader:
         """
         """
         if (path, filename) not in self._cache_readers:
+            # print(self._which_rdr.get_reader(filename, readername))
+            # print(self._which_rdr.get_reader(filename, readername)(path, filename))
             self._cache_readers[(path, filename)] = self._which_rdr.get_reader(filename, readername)(path, filename)
 
         return self._cache_readers[(path, filename)].read(**p_filter_args(self._cache_readers[(path, filename)].read, kwargs))
@@ -799,444 +982,48 @@ class FileReader:
 
 
 
+# =============================================================================
+# MONKEY PATCH FOR MESHIO READER
+# =============================================================================
 
-###############################################################################
-################################  OLD VERSION   ###############################
-###############################################################################
+from meshio.gmsh._gmsh22 import _fast_forward_to_end_block
+from meshio._common import warn
+from shlex import split as splitsh
 
+def my_read_physical_names(f, field_data):
+    line = f.readline().decode()
+    num_phys_names = int(line)
+    for _ in range(num_phys_names):
+        line = splitsh(f.readline().decode())
+        key = " ".join(line[2:])
+        value = np.array(line[1::-1], dtype=int)
+        field_data[key] = value
+    _fast_forward_to_end_block(f, "PhysicalNames")
 
-
-# # strategy factory pattern ?
-# class Reader(ABC):
-#     PATTERN = re.compile(r"^[^_]*_(?P<name>\w*).(?P<ext>bin|txt|vtk)$")
-
-#     @abstractmethod
-#     def read(self, path : str, filename : str, **kwargs):
-#         pass
-
-#     @classmethod
-#     @abstractmethod
-#     def search(cls, path : str, name :str, ext :str):
-#         for file in os.listdir(path):
-#             match = cls.PATTERN.match(file)
-#             if match.group('ext') == ext and (match.group('name') == name or match.group('name').startswith(name)):
-#                 yield file
-#         #         break # break after the first occurrence
-#         # else:
-#         #     logging.error('info.txt output file not found')
-
-#     @classmethod
-#     def parse_filename(cls, filename : str):
-#         """
-#         parse filename
-#         return name and extension
-#         """
-#         match = cls.PATTERN.match(filename)
-#         if match:
-#             name = match.group('name')
-#             ext = match.group('ext')
-#             # if name.startswith('data') and ext == 'bin': # better way ? how to get the increment also
-#             #     name = 'data'
-            
-#             return name, ext
-#         else:
-#             logging.error('at least one match not found')
+def my_write_physical_names(fh, field_data):
+    # Write physical names
+    entries = []
+    for phys_name in field_data:
+        try:
+            phys_num, phys_dim = field_data[phys_name]
+            phys_num, phys_dim = int(phys_num), int(phys_dim)
+            entries.append((phys_dim, phys_num, phys_name))
+        except (ValueError, TypeError):
+            warn("Field data contains entry that cannot be processed.")
+    entries.sort()
+    if entries:
+        fh.write(b"$PhysicalNames\n")
+        fh.write(f"{len(entries)}\n".encode())
+        for entry in entries:
+            tokens = entry[2].split()
+            quoted = " ".join(f'"{t}"' for t in tokens)
+            line = f"{entry[0]} {entry[1]} {quoted}\n"
+            fh.write(line.encode())
+            # fh.write('{} {} "{}"\n'.format(*entry).encode())
+        fh.write(b"$EndPhysicalNames\n")
 
 
-# class VTKDataReader(Reader):
-    
-#     EXT = 'vtk'
-    
-#     def read(self, path : str, filename : str, **kwargs):
-#         """
-#         """            
-#         try:
-#             reader = vtk.vtkUnstructuredGridReader()
-            
-#             reader.SetFileName(os.path.join(path, filename))
-            
-#             reader.ReadAllVectorsOn()
-#             reader.ReadAllScalarsOn()
-#             reader.Update()
-            
-#             return reader.GetOutput()
-#         except FileNotFoundError:
-#             logging.error("%s doesn\'t exist", os.path.join(path, filename))
-            
-#     @classmethod
-#     def search(cls, path):
-#         return super().search(path, '', cls.EXT)
-
-
-# # default class reader
-# class BinReader(Reader):
-#     EXT = 'bin'
-#     def _key(self, file, offset=0):
-#         """
-#         read the key to define the content of the file
-#         file : buffered reader
-#         offset : reader offset
-#         """
-#         _key_options = {0: {'date_written': False, 'minmax_written': False},
-#                         1 : {'date_written': False, 'minmax_written': True}, # if min / max values of each field written at the beginning of each time step
-#                         2 : {'date_written': True, 'minmax_written': False}, # if date written at the beginning of each time step
-#                         3 : {'date_written': True, 'minmax_written': True}}
-#         try:
-#             self.key = np.fromfile(file, dtype='i4', count=1, offset=offset)[0]
-        
-#             if self.key in _key_options:
-#                 self.date_written = _key_options[self.key]['date_written']
-#                 self.minmax_written = _key_options[self.key]['minmax_written']
-#             else:
-#                 logging.error("key value %s not valid", self.key)
-#         except Exception as e:
-#             logging.error('failed to read key due to %s', str(e))
-
-#     def _date(self, file, offset=0):
-#         """
-#         read date at the beginning of each binary file
-#         file : buffered reader
-#         offset : reader offset
-#         """
-#         self.i  = np.fromfile(file, dtype='f4', count=1, offset=offset)[0]
-
-#         gregorian_date = np.fromfile(file, dtype='i4', count=5, offset=offset)
-#         gregorian_date_dt = dt.strptime(''.join(list(map(str, gregorian_date))), '%Y%m%d%H%M')
-#         self._gregorian_date = gregorian_date_dt.strftime('%Y-%m-%d_%H:%M')
-        
-#         self._julian_cnes_date = str(np.fromfile(file, dtype='f4', count=1, offset=offset)[0])
-    
-#     @property
-#     def date(self):
-#         try:
-#             return (self._gregorian_date, self._julian_cnes_date)
-#         except AttributeError:
-#             logging.error("date doesn\' t exist")
-
-#     def _minmax(self, file, variables, offset = 0):
-#         """
-#         read minimum and maximum values of each field.
-#         file   : buffered reader
-#         offset : reader offset
-#         variables : variables
-#         """
-#         self.minmax = np.fromfile(file, dtype='f4', count=2*len(variables), offset=offset)
-    
-#     def _data(self, file, dtype='f4', count=-1, offset=0):
-#         """
-#         read binary buffer file
-#         return an array
-#         file   : buffered reader
-#         type   : variable type to be read
-#         count  : number of elements to be read
-#         offset : reader offset
-#         """
-#         return np.fromfile(file, dtype=dtype, count=count, offset=offset)
-    
-#     def read(self, path : str, filename : str, **kwargs):
-#         """
-#         read binary buffer file
-#         return an array
-#         """            
-#         try:
-#             with open(os.path.join(path, filename), 'rb') as file:
-#                 return(np.fromfile(file, **kwargs))
-#         except FileNotFoundError:
-#             logging.error("%s doesn\'t exist", os.path.join(path, filename))
-
-
-
-
-# class Data(BinReader):
-#     """
-#     """
-#     NAME = 'data'
-
-#     def read(self, path : str, filename : str, variables : list, **kwargs): # ** unpack a dict with splat operator
-#         """
-#         read data binary file
-#         path : path of the binary file
-#         filename : filename of the binary file
-#         """
-#         # variables = kwargs.pop(arg) # get value and delete key
-#         try:
-#             with open(os.path.join(path, filename), 'rb') as file:
-                
-#                 self._key(file, **p_filter_args(self._key, kwargs))
-#                 if self.date_written:
-#                     self._date(file, **p_filter_args(self._date, kwargs))
-                    
-#                 if self.minmax_written:
-#                     self._minmax(file, variables, **p_filter_args(self._minmax, kwargs))
-
-#                 return (self.date[0], np.reshape(self._data(file, **p_filter_args(self._data, kwargs)), (len(variables), -1))) # np.reshape( data, (len(variables), -1))
-#         except FileNotFoundError:
-#             logging.error("%s doesn\'t exist", os.path.join(path, filename))
-
-#     @staticmethod
-#     def _count_byte(variables, num_cells, date_written, minmax_written):
-#         num_byte = 4 * ( 1 + len(variables) * num_cells)
-#         if date_written:
-#             num_byte += 4 * 7
-#         if minmax_written:
-#             num_byte += 4 * 2 * len(variables)
-#         return num_byte
-    
-#     @classmethod
-#     def search(cls, path):
-#         return super().search(path, cls.NAME, cls.EXT)
-    
-
-# class GmshElement(BinReader):
-#     NAME = 'gmsh_element'
-#     def _data(self, file, dtype='i4', count=-1, offset=0):
-#         return super()._data(file, dtype, count, offset)
-    
-#     def read(self, path : str, filename : str, **kwargs):
-#         try:
-#             with open(os.path.join(path, filename), 'rb') as file:
-#                 self._key(file, **p_filter_args(self._key, kwargs))
-#                 if self.date_written:
-#                     self._date(file, **p_filter_args(self._date, kwargs))
-                    
-#                 if self.minmax_written:
-#                     self._minmax(file, **p_filter_args(self._minmax, kwargs))
-
-#                 return {'key' : self.key, 'data' : self._data(file, **p_filter_args(self._data, kwargs))}
-#         except FileNotFoundError:
-#             logging.error("%s doesn\'t exist", os.path.join(path, filename))
-
-
-# class LonLatDeg(BinReader):
-#     NAME = 'lon_lat_degrees'
-#     def read(self, path : str, filename : str, num_nodes : int, **kwargs):
-#         try:
-#             with open(os.path.join(path, filename), 'rb') as file:
-#                 self._key(file, **p_filter_args(self._key, kwargs))
-#                 if self.date_written:
-#                     self._date(file, **p_filter_args(self._date, kwargs))
-                    
-#                 if self.minmax_written:
-#                     self._minmax(file, **p_filter_args(self._minmax, kwargs))
-#                 self.lon_lat = np.fromfile(file, dtype='f4', count=2*num_nodes).reshape(2, num_nodes)
-
-#             return {'lon_lat' : self.lon_lat}
-#         except FileNotFoundError:
-#             logging.error("%s doesn\'t exist", os.path.join(path, filename))
-
-
-# class LonLatRad(BinReader):
-#     NAME = 'lon_lat_radians'
-#     def read(self, path : str, filename : str, num_nodes : int, **kwargs):
-#         try:
-#             with open(os.path.join(path, filename), 'rb') as file:
-#                 self._key(file, **p_filter_args(self._key, kwargs))
-#                 if self.date_written:
-#                     self._date(file, **p_filter_args(self._date, kwargs))
-                    
-#                 if self.minmax_written:
-#                     self._minmax(file, **p_filter_args(self._minmax, kwargs))
-#                 self.lon_lat = np.fromfile(file, dtype='f4', count=2*num_nodes).reshape(2, num_nodes)
-
-#             return {'lon_lat' : self.lon_lat}
-#         except FileNotFoundError:
-#             logging.error("%s doesn\'t exist", os.path.join(path, filename))
-
-
-# class Mesh(BinReader):
-#     NAME = 'mesh'
-#     def read(self, path : str, filename : str, **kwargs):
-#         try:
-#             with open(os.path.join(path, filename), 'rb') as file:
-#                 (self.num_nodes, self.num_cells) = np.fromfile(file, dtype='i4', count=2)
-#                 self.nodes = np.fromfile(file, dtype='f4', count=2*self.num_nodes).reshape(self.num_nodes, 2)
-#                 self.cells = np.fromfile(file, dtype='i4', count=4*self.num_cells).reshape(self.num_cells, 4)
-
-#             return {'num_nodes' : self.num_nodes, 'num_cells' : self.num_cells, 'nodes': self.nodes, 'cells' : self.cells}
-#         except FileNotFoundError:
-#                 logging.error("%s doesn\'t exist", os.path.join(path, filename))
-    
-#     @classmethod
-#     def search(cls, path):
-#         """
-#         """
-#         return super().search(path, cls.NAME, cls.EXT)
-        
-
-# # default class reader
-# class TxtReader(Reader):
-#     EXT = 'txt'
-#     def read(self, path : str, filename : str):
-#         try:
-#             with open(os.path.join(path, filename), 'r') as file:
-#                 return(file.read())
-#         except FileNotFoundError:
-#             logging.error("%s doesn\'t exist", os.path.join(path, filename))
-        
-
-# class Info(TxtReader):
-#     NAME = 'info'
-#     def read(self, path, filename, **kwargs):
-#         _content = super().read(path, filename)
-#         _pattern = re.compile(r"(?P<filename>\w+\.bin).*:\n\s+- type: (?P<type>.*)" # re.compile = regular expression to regular expression object
-#                               r"(?:\n\s*- number of nodes: (?P<num_nodes>\w+))?"
-#                               r"(?:\n\s*- number of cells: (?P<num_cells>\w+))?"
-#                               r"(?:\n\s*- variables:(?P<variables>.*))?"
-#                               r"(?:\n\s*- number of elements \(per var\.\): (?P<num_elements>[0-9]*))?"
-#                               r"(?:\n\s*- date:\s(?P<date>\w+)(?:,\sStarting\sDate\s=\s(?P<start_date>[0-9-T:]+))?)?"
-#                               r"(?:\n\s*- min/max: (?P<min_max>\w+))?")
-        
-#         infos = {}
-#         for match in _pattern.finditer(_content): # return an iterator of match objects
-#             infos[match.group('filename')] = {'type' : match.group('type'),
-#                                               'num_nodes' : int(match.group('num_nodes')) if match.group('num_nodes') else None,
-#                                               'num_cells' : int(match.group('num_cells')) if match.group('num_cells') else None,
-#                                               'variables' : [variable.strip() for variable in match.group('variables').split(',')] if match.group('variables') else None,
-#                                               'num_elements' : int(match.group('num_elements')) if match.group("num_elements") else None,
-#                                               'date' : match.group('date') == 'yes' if match.group('date') else None,
-#                                               'start_date': match.group('start_date') if match.group('start_date') else None,
-#                                               'min_max' : match.group('min_max') == 'yes' if match.group('min_max') else None}#,
-#                                             #   'concatenated' : True if re.search(r'timeseries', match.group('filename')) else (False if re.search(r'xxxxxx', match.group('filename')) else None)}
-
-#         return p_strip_None(infos)
-
-#     @classmethod
-#     def search(cls, path):
-#         """
-#         search info filename based on name and extension
-#         return a generator object
-#         """
-#         return super().search(path, cls.NAME, cls.EXT)
-
-
-# class DataMinMax(TxtReader):
-#     NAME = 'data_minmax'
-#     def read(self, path, filename, **kwargs) -> pd.DataFrame:
-#         """
-#         return a pandas.DataFrame
-#         """
-#         return(pd.read_csv(os.path.join(path, filename), sep=r"/s+", engine='python', **p_filter_args(pd.read_csv, kwargs)))
-
-#     @classmethod
-#     def search(cls, path):
-#         return super().search(path, cls.NAME, cls.EXT)
-
-# class WhichReader():
-#     def __init__(self):   
-#         self._bin_readers = {'default' : BinReader,
-#                              'data' : Data,
-#                              'gmsh_element' : GmshElement,
-#                              'lon_lat_degrees' : LonLatDeg,
-#                              'lon_lat_radians' : LonLatRad, #'lon_lat_degrees' : LonLatDeg, 'lon_lat_radians' : LonLatRad ?
-#                              'mesh' : Mesh}
-                             
-#         self._txt_readers = {'default' : TxtReader,
-#                              'info' : Info,
-#                              'data_minmax' : DataMinMax}
-        
-#         self._vtk_readers = {'default': VTKDataReader}
-        
-    
-#     def _reader(self, ext : str, name : str='default') -> 'Reader':
-#         if ext == 'bin':
-#             return self._bin_readers.get(name, BinReader)
-#         elif ext == 'txt':
-#             return self._txt_readers.get(name, TxtReader)
-#         elif ext == 'vtk':
-#             return self._vtk_readers.get(name, VTKDataReader)
-
-
-# # facade      
-# class FileReader:
-#     def __init__(self):
-#         self._which_rdr = WhichReader()
-#         self._cache_readers = {} # registery of already created reader instances
-
-#     def read_file(self, path : str, filename : str, readername : str=None, **kwargs):
-#         name_parse, ext = Reader.parse_filename(filename)
-#         print(name_parse, ext)
-#         if name_parse.startswith('data') and ext == 'bin':
-#             name_parse = 'data'
-#         if not readername:
-#             name = kwargs.get('name', name_parse) # useful ? _filter_args ?
-#         else:
-#             name = readername
-#         if (path, filename) not in self._cache_readers:
-#             if ext == 'vtk':
-#                 self._cache_readers[(path, filename)] = self._which_rdr._reader(ext)()
-#             else:
-#                 self._cache_readers[(path, filename)] = self._which_rdr._reader(ext, name)()
-#         return self._cache_readers[(path, filename)].read(path, filename, **kwargs)
-
-#     def cache_reader(self, path : str, filename : str):
-#         return self._cache_readers[(path, filename)]
-
-#     @property
-#     def cache_readers(self):
-#         return self._cache_readers
-    
-    
-    
-    
-    
-# if __name__ == '__main__':
-
-#     import os
-#     from init import set_logging
-#     import matplotlib.pyplot as plt
-    
-#     set_logging('info', 'log/')
-
-#     # example path
-#     path = 'path/to/full/'
-
-#     # search examples
-#     supported_filenames = list(Reader.search(path))
-#     binary_filenames = list(BinReader.search(path))
-#     data_binary_filenames = list(DataBinReader.search(path))
-#     txt_filenames = list(TxtReader.search(path))
-#     info_txt_filename = next(InfoTxtReader.search(path))
-#     mesh_binary_filename = next(MeshBinReader.search(path))
-#     lon_lat_binary_filename = next(LonLatDegBinReader.search(path))
-#     concat_data_binary_filename = next(ConcatDataBinReader.search(path))
-#     data_minmax_txt_filename = next(DataMinMaxTxtReader.search(path))
-
-#     # reader object
-#     file_rdr = FileReader()
-
-#     # read examples
-#     details = file_rdr.read_file(path, info_txt_filename)
-
-#     # indexing through details dictionnary
-#     num_nodes = details[mesh_binary_filename]['num_nodes']
-#     num_cells = details[mesh_binary_filename]['num_cells']
-#     variables = details[concat_data_binary_filename]['variables']
-#     minmax_written = details[concat_data_binary_filename]['min_max']
-#     date_written = details[concat_data_binary_filename]['date']
-#     # count number of bytes
-#     num_bytes_per_records = ConcatDataBinReader.count_bytes_per_records(variables, num_cells, date_written, minmax_written)
-
-#     lon_lat = file_rdr.read_file(path, lon_lat_binary_filename, num_nodes=num_nodes)
-#     triangles = file_rdr.read_file(path, mesh_binary_filename)['cells'][:,:3]
-
-#     concat_data_bin_rdr = ConcatDataBinReader(path, concat_data_binary_filename)
-#     # get the number totals of outputs times
-#     num_times = concat_data_bin_rdr.count_times(num_bytes_per_records)
-#     # list of dates
-#     dates = list(concat_data_bin_rdr.dates(num_times, num_bytes_per_records))
-
-#     # read concatened data binary file
-#     count = len(variables) * num_cells
-#     concat_data = {}
-#     offset = 0
-#     for t in range(num_times):
-#         concat_data.update(file_rdr.read_file(path, concat_data_binary_filename, variables=variables,
-#                                             count=count, offset=offset, prions=2))
-#         offset += num_bytes_per_records
-    
-#     # plot example
-#     # date = '1997-12-28_20:00'
-#     # fig, ax = plt.subplots(figsize=(8,6))
-#     # im = ax.tripcolor(lon_lat[0,:], lon_lat[1,:], triangles, concat_data[date][0, :]) # indexing at 0 for the first variable
-#     # plt.show()
-
+# Override the original
+import meshio.gmsh._gmsh22
+meshio.gmsh._gmsh22._read_physical_names = my_read_physical_names
+meshio.gmsh._gmsh22._write_physical_names = my_write_physical_names

@@ -29,17 +29,22 @@ class Plotter:
                  figure_labelfontsize: int = 8,
                  figure_tickfontsize: int = 7,
                  figure_grid_linewidth: float = .5,
+                 figure_grid_linestyle: str = 'dashed',
                  figure_axes_color = 'k',
+                 figure_axes_aspect: float = 1.,
+                 figure_subplots_kwargs: dict = {},
                  
                  pcolor_key: str = 'ssh',
                  pcolor_max: float = None, 
                  pcolor_min: float = None, 
                  pcolor_cmap: str = 'RdBu_r',
                  pcolor_units: str = 'm',
+                 pcolor_kwargs: dict = {},
                  
                  triplot: bool = False,
                  triplot_color: str = 'seagreen',
                  triplot_linewidth: float = 0.2,
+                 triplot_kwargs: dict = {},
                  
                  contour_key: str = 'bathy',
                  contour_levels: int = 4,
@@ -47,6 +52,7 @@ class Plotter:
                  contour_linewidths: float = 1,
                  contour_units: str = 'm',
                  contour_fontsize: int = 8,
+                 contour_kwargs: dict = {},
                  
                  quiver_u_key: str = 'u',
                  quiver_v_key: str = 'v',
@@ -56,10 +62,23 @@ class Plotter:
                  quiver_lengthkey: float = 1,
                  quiver_units: str = 'm/s',
                  quiver_fontsize: int = 8,
+                 quiver_kwargs: dict = {},
+                 
+                 scatter_from_points: bool = True,
+                 scatter_c_key: str = '',
+                 scatter_s: float = .1,
+                 scatter_max: float = None, 
+                 scatter_min: float = None, 
+                 scatter_cmap: str = 'jet',
+                 scatter_kwargs: dict = {},
                  
                  rectangle_positions = None,
                  rectangle_colors = 'k',
-                 rectangle_linewidths = 1
+                 rectangle_linewidths: float = 1,
+                 
+                 line_plots: list = [], # list of (args, kwargs) tuples to be plotted last
+                 
+                 collections: list = []
                  ):
         """
         Initialize VTKPlotter.
@@ -124,7 +143,10 @@ class Plotter:
         self.figure_labelfontsize = figure_labelfontsize
         self.figure_tickfontsize = figure_tickfontsize
         self.figure_grid_linewidth = figure_grid_linewidth 
+        self.figure_grid_linestyle = figure_grid_linestyle
         self.figure_axes_color = figure_axes_color 
+        self.figure_axes_aspect = figure_axes_aspect
+        self.figure_subplots_kwargs = figure_subplots_kwargs
         
         # self.timestep = timestep
         
@@ -133,10 +155,12 @@ class Plotter:
         self.pcolor_min = pcolor_min
         self.pcolor_cmap = pcolor_cmap
         self.pcolor_units = pcolor_units
+        self.pcolor_kwargs = pcolor_kwargs
         
         self.triplot = triplot
         self.triplot_color = triplot_color
         self.triplot_linewidth = triplot_linewidth
+        self.triplot_kwargs = triplot_kwargs
         
         self.contour_key = contour_key
         self.contour_levels = contour_levels
@@ -144,6 +168,7 @@ class Plotter:
         self.contour_linewidths = contour_linewidths
         self.contour_units = contour_units
         self.contour_fontsize = contour_fontsize
+        self.contour_kwargs = contour_kwargs
         
         self.quiver_u_key = quiver_u_key
         self.quiver_v_key = quiver_v_key
@@ -153,10 +178,23 @@ class Plotter:
         self.quiver_lengthkey = quiver_lengthkey
         self.quiver_units = quiver_units
         self.quiver_fontsize = quiver_fontsize
+        self.quiver_kwargs = quiver_kwargs
+        
+        self.scatter_from_points = scatter_from_points
+        self.scatter_c_key = scatter_c_key
+        self.scatter_s = scatter_s
+        self.scatter_max = scatter_max
+        self.scatter_min = scatter_min
+        self.scatter_cmap = scatter_cmap
+        self.scatter_kwargs = scatter_kwargs
         
         self.rectangle_positions = rectangle_positions if rectangle_positions is not None else []
         self.rectangle_colors = rectangle_colors if rectangle_colors is not None else []
         self.rectangle_linewidths = rectangle_linewidths if rectangle_linewidths is not None else []
+        
+        self.line_plots = line_plots
+        
+        self.collections = collections
             
         if (not os.path.exists(figure_outputdir)) and (self.figure_save):
             os.makedirs(figure_outputdir)
@@ -176,13 +214,14 @@ class Plotter:
 
         fig, ax = plt.subplots(1, 1, 
                                figsize=self.figure_size, 
-                               dpi=self.figure_dpi)
+                               dpi=self.figure_dpi,
+                               **self.figure_subplots_kwargs)
         ax.spines['bottom'].set_color(self.figure_axes_color)
         ax.spines['top'].set_color(self.figure_axes_color)
         ax.spines['left'].set_color(self.figure_axes_color)
         ax.spines['right'].set_color(self.figure_axes_color)
 
-        ax.set_aspect(1)
+        ax.set_aspect(self.figure_axes_aspect)
 
         return fig, ax
 
@@ -245,9 +284,32 @@ class Plotter:
             ax (plt.Axes): Matplotlib axes to finalize
         """
         
-        # Adjust limits
-        ax.set_xlim(self.figure_xlim)
-        ax.set_ylim(self.figure_ylim)
+        # Recompute limits from all artists, including collections
+        ax.relim()
+        ax.autoscale_view()
+        for col in ax.collections:
+            bbox = col.get_datalim(ax.transData)
+            if bbox.width > 0 or bbox.height > 0:  # skip empty/degenerate bboxes
+                ax.update_datalim(bbox.get_points())
+        ax.autoscale_view()  # reapply after updating datalim from collections
+        
+        # Only override axes limits where the user explicitly provided a value
+        xmin, xmax = self.figure_xlim
+        ymin, ymax = self.figure_ylim
+        
+        if xmin is not None or xmax is not None:
+            current_xlim = ax.get_xlim()
+            ax.set_xlim(
+                xmin if xmin is not None else current_xlim[0],
+                xmax if xmax is not None else current_xlim[1]
+            )
+        
+        if ymin is not None or ymax is not None:
+            current_ylim = ax.get_ylim()
+            ax.set_ylim(
+                ymin if ymin is not None else current_ylim[0],
+                ymax if ymax is not None else current_ylim[1]
+            )
         
         # Adjust ticks
         ax.tick_params(axis='both', direction='in', 
@@ -268,7 +330,7 @@ class Plotter:
         
         # Add grid
         if self.figure_grid_linewidth:
-            ax.grid(linestyle='dashed', 
+            ax.grid(linestyle=self.figure_grid_linestyle, 
                     zorder=1,
                     linewidth = self.figure_grid_linewidth,
                     color=self.figure_axes_color,
@@ -289,7 +351,6 @@ class Plotter:
         # fig_title = f"{self.pcolor_key}_{self.contour_key}_{self.quiver_u_key}_{self.quiver_v_key}_{self.timestep:05d}.{self.figure_format}"
         fig_filename = '_'.join(filter(None, key_list))
         return fig_filename
-    
     
     def _finalize_figure(self, fig: plt.Figure, ax: plt.Axes) -> None:
         """
@@ -449,7 +510,8 @@ class Plotter:
                                  vmax=self.pcolor_max,
                                  cmap=self.pcolor_cmap, 
                                  rasterized=True,
-                                 zorder=0)
+                                 zorder=0,
+                                 **self.pcolor_kwargs)
         
         # Plot bathymetry
         if self.contour_key:
@@ -459,7 +521,8 @@ class Plotter:
                                     linestyles=self.generate_custom_dash_patterns(),
                                     linewidths=self.contour_linewidths, 
                                     colors=self.contour_colors, 
-                                    zorder=2)
+                                    zorder=2,
+                                    **self.contour_kwargs)
             ax.clabel(contour_plot, fontsize=self.contour_fontsize)
         
         # Plot currents
@@ -471,7 +534,8 @@ class Plotter:
                                      cell_data[self.quiver_v_key][::N, ::N],
                                      scale=self.quiver_scale, 
                                      scale_units='width', 
-                                     zorder=10)
+                                     zorder=10,
+                                     **self.quiver_kwargs)
             ax.quiverkey(quiver_plot, 
                          self.quiver_positionkey[0], 
                          self.quiver_positionkey[1], 
@@ -479,7 +543,15 @@ class Plotter:
                          f'{self.quiver_lengthkey:0.3f} {self.quiver_units}', 
                          labelpos='E',
                          fontproperties={'size':self.quiver_fontsize})
-        
+    
+        # Add all collections :
+        for col in self.collections:
+            ax.add_collection(col)
+            
+        # Add all Line2D :
+        for a, k in self.line_plots:
+            ax.plot(*a, **k)
+            
         # Plot the optional zoom positions
         new_rectangle_positions, new_rectangle_colors, new_rectangle_linewidths = self.updated_rectangle_args()
         if new_rectangle_positions:
@@ -491,10 +563,8 @@ class Plotter:
                                              linewidth=lw,
                                              zorder=100)
                 ax.add_patch(rect)
-        
-        
+            
         # Adjust the axes and grid looks
-        # self._adjust_axes(fig, ax)
         self._adjust_axes(ax)
         
         # Add the colorbar if any
@@ -509,10 +579,12 @@ class Plotter:
             return(fig, ax)
     
     def plot_triangle_data(self, 
+                           points_array: np.ndarray,
                            tripcolor_tri: mpl.tri.Triangulation,
                            tricontour_tri: mpl.tri.Triangulation,
+                           cell_centers_array: np.ndarray,
                            cell_data: typing.Dict, 
-                           cell_centers_array: np.ndarray) -> None:
+                           point_data) -> None:
         """
         Plot triangle cell data.
 
@@ -543,16 +615,18 @@ class Plotter:
                                     cmap=self.pcolor_cmap,  
                                     rasterized=True,
                                     clip_on=True,
-                                    zorder=0)
+                                    zorder=0,
+                                    **self.pcolor_kwargs)
         
         # Plot the grid
         if self.triplot:
             ax.triplot(tripcolor_tri, 
                        linewidth=self.triplot_linewidth, 
                        color=self.triplot_color,
-                       clip_on=True)
+                       clip_on=True,
+                       **self.triplot_kwargs)
         
-        # Plot bathymetry
+        # Plot tricontour
         if self.contour_key:
             bathy_plot = ax.tricontour(tricontour_tri, 
                                        cell_data[self.contour_key],
@@ -560,8 +634,27 @@ class Plotter:
                                        linestyles=self.dash_patterns(),
                                        linewidths=self.contour_linewidths, 
                                        colors=self.contour_colors,
-                                       zorder=2)
+                                       zorder=2,
+                                       **self.contour_kwargs)
             ax.clabel(bathy_plot, fontsize=self.contour_fontsize)
+        
+        
+        # Plot scatter
+        if self.scatter_c_key:
+            if self.scatter_from_points == True:
+                x, y = points_array[:, 0], points_array[:, 1]
+                data = point_data
+            else :
+                x, y = cell_centers_array[:, 0], cell_centers_array[:, 1]
+                data = cell_data
+            ax.scatter(x, y, 
+                       c=data[self.scatter_c_key],
+                       s=self.scatter_s,
+                       vmin=self.scatter_min, 
+                       vmax=self.scatter_max,
+                       cmap=self.scatter_cmap, 
+                       **self.scatter_kwargs
+                       )
         
         # Plot currents
         if self.quiver_u_key and self.quiver_v_key:
@@ -575,7 +668,8 @@ class Plotter:
                                      scale=self.quiver_scale, 
                                      scale_units='width', 
                                      clip_on=True,
-                                     zorder=10)
+                                     zorder=10,
+                                     **self.quiver_kwargs)
             ax.quiverkey(current_plot, 
                          self.quiver_positionkey[0], 
                          self.quiver_positionkey[1],  
@@ -584,6 +678,14 @@ class Plotter:
                          labelpos='E',
                          fontproperties={'size':self.quiver_fontsize})
         
+        # Add all collections :
+        for col in self.collections:
+            ax.add_collection(col)
+            
+        # Add all Line2D :
+        for a, k in self.line_plots:
+            ax.plot(*a, **k)
+            
         # Plot the optional zoom positions
         new_rectangle_positions, new_rectangle_colors, new_rectangle_linewidths = self.updated_rectangle_args()
         if new_rectangle_positions:
@@ -595,17 +697,20 @@ class Plotter:
                                              linewidth=lw,
                                              zorder=100)
                 ax.add_patch(rect)
-                
+        
+        # Add all Line2D :
+        for a, k in self.line_plots:
+            ax.plot(*a, **k)
+        
         # Adjust the axes and grid looks
-        # self._adjust_axes(fig, ax)
         self._adjust_axes(ax)
         
         # Add the colorbar if any
         if self.pcolor_key:
             self._setup_colorbar(fig, ax, ssh_plot)
-        
+
         if self.figure_save:
-            # Ad a title and save
+            # Add a title and save
             self._finalize_figure(fig, ax)
         else :
             fig, ax = self._finalize_figure(fig, ax)
@@ -641,8 +746,10 @@ class Plotter:
                                 cell_data_grid)
         elif processor.cell_type == 'all_Triangle':
             tripcolor_tri, tricontour_tri = processor.compute_triangulations()
-            self.plot_triangle_data(tripcolor_tri, 
+            self.plot_triangle_data(processor.points_array,
+                                    tripcolor_tri, 
                                     tricontour_tri,
+                                    processor.cell_centers_array,
                                     processor.cell_data, 
-                                    processor.cell_centers_array)
+                                    processor.point_data)
         print("       \033[32mOK:\033[0m Figure created and saved")

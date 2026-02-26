@@ -5,6 +5,7 @@ from .common import p_colorize, p_error, p_ok, p_warning
 from .common import p_filter_args, p_strip_None
 from .common import p_convert_julian_day_to_gregorian_date
 from .common import p_convert_gregorian_date_to_julian_day
+from .common import p_timer
 
 from .initialize_logs import set_logging
 
@@ -15,17 +16,13 @@ from .readers import BinReader, DataBinReader, ConcatDataBinReader
 from .readers import GmshElementBinReader, MeshBinReader
 from .readers import LonLatDegBinReader, LonLatRadBinReader
 from .readers import TxtReader, InfoTxtReader, DataMinMaxTxtReader
+# from .readers import OldVTKReader, OldDataVTKReader, OldDiagVTKReader
 from .readers import VTKReader, DataVTKReader, DiagVTKReader
+from .readers import MshReader, DataMshReader
 from .readers import TecplotReader, DataTecplotReader
-# OLD NAMES
-# from .readers import VTKDataReader
-# from .readers import LonLatDeg, LonLatRad, BinReader, GmshElement, Data, Mesh
-# from .readers import TxtReader, DataMinMax, Info
 
-from .processors import DataProcessor, VTKDataProcessor, BinDataProcessor
-
-# Old version of readers, Processors and plotters
-# from .vtk_plotter_lib import VTKDataReader, VTKDataProcessor, VTKPlotter
+from .processors import DataProcessor
+from .processors import VTKDataProcessor, BinDataProcessor, MeshDataProcessor
 
 from .yaml_meshtool import YAMLHandler, FileHandler, YAMLEditor
 
@@ -53,6 +50,7 @@ __all__ = [
     'LonLatDegBinReader', 'LonLatRadBinReader',
     'TxtReader', 'InfoTxtReader', 'DataMinMaxTxtReader',
     'VTKReader', 'DataVTKReader', 'DiagVTKReader',
+    'MshReader', 'DataMshReader', 
     'TecplotReader', 'DataTecplotReader',
     # 'FileReader', 'WhichReader', 'VTKDataReader',
     # 'LonLatDeg', 'LonLatRad', 'BinReader', 'GmshElement', 'Data', 'Mesh',

@@ -6,6 +6,8 @@ A series of very basic functions used in other tools
 
 from datetime import datetime, timedelta
 from inspect import signature
+from contextlib import contextmanager, nullcontext
+from time import perf_counter
 
 def p_colorize(text, color_code):
     """Adds color to terminal output"""
@@ -55,6 +57,19 @@ def p_convert_gregorian_date_to_julian_day(gregorian_date : str, ref='cnes'):
         return (gregorian_date - datetime(1950, 1, 1)).days
     else:
         raise ValueError
+        
+
+@contextmanager
+def _timer(name: str = ''):
+    start = perf_counter()
+    yield
+    end = perf_counter()
+    p_ok(f"{name}   {end - start:.6f}s")
+    # print()
+    
+def p_timer(name: str = '', verbose: bool = False):
+    """Returns p_timer if verbose, else a silent no-op."""
+    return _timer(name) if verbose else nullcontext()
 
 # def p_calculate_number_of_days_between_two_dates(date : str, date_to : str):
 #     """

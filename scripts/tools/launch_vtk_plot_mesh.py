@@ -36,7 +36,11 @@ import argparse
 def main():
 
     # Read args and kwargs
-    parser = argparse.ArgumentParser(description="A small python script to generate matplotlib figures of a tolosa mesh using the informations of the first '.vtk' file found inside the current path")
+    parser = argparse.ArgumentParser(
+        description="A small python script to generate matplotlib figures of \
+    a mesh using the informations of the first '.vtk' file found inside the \
+    current path"
+        )
     # Parse arguments
     args = parser.parse_args()
 

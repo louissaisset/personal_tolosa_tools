@@ -27,7 +27,7 @@ from shapely.geometry import Point
 def create_parser():
     """Create command line argument parser"""
     parser = argparse.ArgumentParser(
-        description='Create a new regional.depth file, corrected for infrastructures depth',
+        description='Creates a new regional.depth file, corrected for infrastructures depth',
         formatter_class=argparse.RawDescriptionHelpFormatter)
     
     parser.add_argument(
@@ -159,6 +159,19 @@ def checkfile(file):
         return(0)
 
 def main():
+    """
+    The program creates a new regional.depth-ele.a type file saved as --save_in
+    inside --workdir.
+    
+    It uses the polygons contained in --shp_infras and the rectified depths 
+    inside --tif_rectified (absolute paths). 
+    
+    The program assumes all the original depths and cell centers are in the 
+    regional.ele and regional.depth files in --workdir. 
+    
+    The resulting regional.depth.a file is saved inside --workdir under the 
+    file name --save_in
+    """
     parser = create_parser()
     args = parser.parse_args()
     
@@ -166,10 +179,10 @@ def main():
     if args.workdir:
         current_path = Path(args.workdir)
         if not current_path.exists():
-            print(f"Error: Working directory does not exist: {current_path}")
+            ptt.p_error(f"Working directory does not exist: {current_path}")
             sys.exit(1)
         if not current_path.is_dir():
-            print(f"Error: Working directory is not a directory: {current_path}")
+            ptt.p_error(f"Working directory is not a directory: {current_path}")
             sys.exit(1)
     else:
         current_path = Path.cwd()
