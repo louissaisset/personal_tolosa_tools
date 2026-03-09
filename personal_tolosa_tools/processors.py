@@ -13,14 +13,19 @@ from copy import copy, deepcopy
 import os
 
 import vtk
-from meshio import Mesh
+from meshio import Mesh, CellBlock
 import numpy as np
 from pandas import unique
 
 from scipy.interpolate import LinearNDInterpolator, NearestNDInterpolator, RegularGridInterpolator
 from scipy.spatial import cKDTree
+from scipy.sparse import csr_matrix
+from scipy.sparse.csgraph import connected_components
 
-from shapely import LineString, Polygon, polygonize, points, STRtree, from_ragged_array
+from shapely import LineString, Polygon
+from shapely import points, linestrings
+from shapely import polygonize
+from shapely import STRtree, from_ragged_array
 from shapely.vectorized import contains
 from shapely.ops import linemerge
 
@@ -181,17 +186,21 @@ class MeshDataProcessor(DataProcessor):
         self.cell_types = [a.type for a in self.data.cells] if self.num_blocks else []
         self.index_triangle = self.cell_types.index('triangle') if 'triangle' in self.cell_types else None
         self.index_line = self.cell_types.index('line') if 'line' in self.cell_types else None
+        self.index_vertex = self.cell_types.index('vertex') if 'vertex' in self.cell_types else None
         
-        self.cells = self.data.cells[self.index_triangle].data if 'triangle' in self.cell_types else np.array([])
+        self.cells = self.data.cells[self.index_triangle].data.astype(int) if 'triangle' in self.cell_types else np.array([])
         self.num_cells = len(self.cells)
         self.cell_centers_array = self._create_cell_center_array()
         
-        self.lines = self.data.cells[self.index_line].data if 'line' in self.cell_types else np.array([])
+        self.lines = self.data.cells[self.index_line].data.astype(int) if 'line' in self.cell_types else np.array([])
         self.num_lines = len(self.lines)
         self.line_centers_array = self._create_line_center_array()
         
+        self.vertexes = self.data.cells[self.index_vertex].data.astype(int) if 'vertex' in self.cell_types else np.array([])
+        self.num_vertexes = len(self.vertexes)
+        
         # Extract cell and point data in dict
-        self.point_data = data.point_data if data.point_data else {}
+        self.point_data = data.point_data.copy() if data.point_data else {}
         if self.points_array.any() and 'z' not in self.point_data.keys(): 
             self.point_data['z'] = self.points_array[:,-1]
         self.cell_data = self._create_cell_data_dict()
@@ -214,7 +223,10 @@ class MeshDataProcessor(DataProcessor):
         
         # # Compute node centered polygons from cell centers
 
-    
+
+# =============================================================================
+#     SIMPLE REFORMATTING OF CONTENTS
+# =============================================================================
     def _create_cell_center_array(self) -> np.ndarray:
         """
         Compute cell centers by averaging node coordinates.
@@ -261,21 +273,7 @@ class MeshDataProcessor(DataProcessor):
         else :
             return 'no_triangles'
         
-    def reshape_to_grid(self):
-        """
-        Reshape data to grid format for quad cells.
-        
-        Returns:
-            Tuple of grid X coordinates, grid Y coordinates, and reshaped cell data
-        """
-        shape = [len(np.unique(self.cell_centers_array[:, 0])),
-                len(np.unique(self.cell_centers_array[:, 1]))]
-        center_grid_X = self.cell_centers_array[:, 0].reshape(shape)
-        center_grid_Y = self.cell_centers_array[:, 1].reshape(shape)
-        cell_data_grid = {k: v.reshape(shape) for k, v in self.cell_data.items()}
-        
-        return center_grid_X, center_grid_Y, cell_data_grid
-    
+
     def _create_cell_data_dict(self) -> dict:
         """
         Flatten cell data from blocks to single arrays per variable.
@@ -335,92 +333,19 @@ class MeshDataProcessor(DataProcessor):
         return (xmin, xmax, ymin, ymax)
     
     
-    
-    def compute_triangulations(self) -> tuple:
-        """
-        Compute matplotlib triangulations for triangle meshes.
-        
-        Returns:
-            Tuple of (tripcolor_triangulation, tricontour_triangulation)
-        """
-        if self.cell_type != 'all_Triangle':
-            raise ValueError("Triangulations only supported for all-triangle meshes")
-        
-        # Get triangle cell connectivity
-        triangle_cells = self.cells
-        if not len(triangle_cells) :
-            raise ValueError("No triangle cells found")
-        
-        # Create tripcolor triangulation (for coloring faces)
-        tripcolor_triangulation = mpl.tri.Triangulation(
-            self.points_array[:, 0],
-            self.points_array[:, 1],
-            triangles=triangle_cells
-        )
-        
-        # Create tricontour triangulation (for contouring at cell centers)
-        tricontour_triangulation = mpl.tri.Triangulation(
-            self.cell_centers_array[:, 0],
-            self.cell_centers_array[:, 1]
-        )
-        
-        # Create mask for tricontour to avoid large triangles
-        xtri = self.cell_centers_array[:, 0][tricontour_triangulation.triangles] - \
-               np.roll(self.cell_centers_array[:, 0][tricontour_triangulation.triangles], 1, axis=1)
-        ytri = self.cell_centers_array[:, 1][tricontour_triangulation.triangles] - \
-               np.roll(self.cell_centers_array[:, 1][tricontour_triangulation.triangles], 1, axis=1)
-        
-        # Compute characteristic cell size
-        min_cells = self.points_array[triangle_cells].min(axis=1)
-        max_cells = self.points_array[triangle_cells].max(axis=1)
-        sizes = max_cells - min_cells
-        max_size = max(np.hypot(sizes[:, 0], sizes[:, 1]))
-        
-        # Apply mask
-        tricontour_triangulation.set_mask(
-            np.max(np.sqrt(xtri**2 + ytri**2), axis=1) > max_size
-        )
-        
-        return tripcolor_triangulation, tricontour_triangulation
-    
-    def _linestrings_from_edges(self, edges: np.ndarray, points: np.ndarray):
-        """
-        Convert edges (M,2) to merged shapely LineString / MultiLineString.
-        """
-        segments = [
-            LineString(points[edge])
-            for edge in edges
-        ]
+# =============================================================================
+#     ALL COMPUTATIONS OF USEFUL MAPPINGS
+# =============================================================================
 
-        merged = linemerge(segments)
-        return merged
+
+    def compute_cell_to_node(self):
+        return (self.cells)
     
-    def compute_lines_by_physical(self):
-        phys = self.line_data["gmsh:physical"]
-        result = {}
-        link = dict([(v[0], k) for k, v in self.data.field_data.items()])
+    def compute_line_to_node(self):
+        return (self.lines)
     
-        for pid in np.unique(phys):
-            edges = self.lines[phys == pid]
-            merged = self._linestrings_from_edges(edges, self.points_array)
-            result[link[int(pid)]] = merged
-        return result
-    
-    def compute_lines_by_geometrical(self):
-        phys = self.line_data["gmsh:geometrical"]
-        result = {}
-    
-        for pid in np.unique(phys):
-            edges = self.lines[phys == pid]
-            merged = self._linestrings_from_edges(edges, self.points_array)
-            result[int(pid)] = merged
-        return result
-    
-    
-    
-    
-    
-    
+    def compute_vertex_to_node(self):
+        return (self.vertexes)
 
     def compute_max_node_cell_adjacency(self):
         """
@@ -431,9 +356,6 @@ class MeshDataProcessor(DataProcessor):
         values, counts = np.unique(self.cells, return_counts=True)
         idx = counts.argmax()
         return int(counts[idx])
-    
-    def compute_cell_to_node(self):
-        return (self.cells)
     
     def compute_edge_to_node(self):
         """
@@ -462,7 +384,7 @@ class MeshDataProcessor(DataProcessor):
             self.cells[:, [1, 2]],
             self.cells[:, [2, 0]]
         ])
-    
+        # print(edges)
         # 2. Sort nodes inside each edge (undirected)
         edges = np.sort(edges, axis=1)
     
@@ -470,7 +392,7 @@ class MeshDataProcessor(DataProcessor):
         _, edge_ids = np.unique(edges, axis=0, return_inverse=True)
     
         # 4. Reshape back to (num_cells, 3)
-        cell_to_edge = edge_ids.reshape(3, self.num_cells).T
+        cell_to_edge = edge_ids.ravel().reshape(3, self.num_cells).T
     
         return cell_to_edge
         
@@ -564,6 +486,11 @@ class MeshDataProcessor(DataProcessor):
 
         Returns np.ndarray 
         """
+        
+        if len(self.check_duplicates('triangle')):
+            p_error("Cannot compute edge_to_cell because of duplicate cells")
+            return np.array([])
+        
         cells = self.cells
         n_cells = self.num_cells
     
@@ -579,7 +506,8 @@ class MeshDataProcessor(DataProcessor):
         _, edge_ids = np.unique(edges, axis=0, return_inverse=True)
     
         # 3. Cell indices (each repeated 3 times)
-        cell_ids = np.repeat(np.arange(n_cells), 3)
+        # cell_ids = np.repeat(np.arange(n_cells), 3)
+        cell_ids = np.tile(np.arange(n_cells), 3)
     
         # 4. Stable grouping by edge index
         order = np.argsort(edge_ids, kind="stable")
@@ -696,8 +624,172 @@ class MeshDataProcessor(DataProcessor):
         quad_to_node = cells[cell_ids, local_node_ids]
     
         return quad_to_node
+    
+    
+    def compute_node_to_line(self):
+        """
+        Computes the node to boundary-line mapping. The number of adjacent
+        lines varies (typically 1 or 2). NaN-padded like node_to_cell.
+
+        Returns np.ndarray shape (num_points, max_adj)
+        """
+        lines      = self.lines                                    # (M, 2)
+        num_lines  = self.num_lines
+        num_points = self.num_points
+        
+        if not num_lines:
+            p_warning("No lines")
+            return np.array([])
+        
+        max_adj  = int(np.max(np.bincount(lines.ravel(), minlength=num_points)))
+
+        nodes    = lines.ravel()                                   # (2*M,)
+        line_ids = np.repeat(np.arange(num_lines), 2)             # (2*M,)
+
+        order    = np.argsort(nodes)
+        nodes    = nodes[order]
+        line_ids = line_ids[order]
+
+        counts    = np.bincount(nodes, minlength=num_points)
+        offsets   = np.cumsum(np.r_[0, counts[:-1]])
+        local_idx = np.arange(nodes.size) - offsets[nodes]
+
+        node_to_line = np.full((num_points, max_adj), np.nan)
+        node_to_line[nodes, local_idx] = line_ids
+        node_to_line.sort(axis=1)
+
+        return node_to_line
 
 
+    def compute_line_to_cell(self):
+        """
+        Computes the boundary-line to cell mapping by intersecting the
+        node_to_cell rows of each line's two endpoints.
+
+        A cell is adjacent to a line if it contains *both* endpoint nodes,
+        which is exactly the intersection of node_to_cell[n1] and
+        node_to_cell[n2].
+
+        For true boundary lines the result has 1 adjacent cell;
+        interior matched lines may have 2.
+
+        Returns np.ndarray shape (num_lines, max_adj), NaN-padded.
+        """
+        if not self.num_lines:
+            p_warning("No lines")
+            return np.array([])
+        node_to_cell = self.compute_node_to_cell()          # (N, max_adj)
+
+        n1 = self.lines[:, 0]                               # (M,)
+        n2 = self.lines[:, 1]                               # (M,)
+
+        A = node_to_cell[n1]                                # (M, max_adj)  cells of node 1
+        B = node_to_cell[n2]                                # (M, max_adj)  cells of node 2
+
+        # Broadcast comparison: which cells of A also appear in B?
+        # Shape: (M, max_adj_A, max_adj_B) — max_adj is typically 6-8, so fine
+        matching = (A[:, :, None] == B[:, None, :]) & ~np.isnan(A[:, :, None])
+        in_both = matching.any(axis=2)                         # (M, max_adj_A)
+
+        # Collect matched cell ids, replacing non-matches with NaN
+        shared = np.where(in_both, A, np.nan)               # (M, max_adj_A)
+
+        # Pack valid values to the left: np.sort pushes NaN to the end.
+        # Then take the first 2 columns (boundary -> 1 cell, shared edge -> 2).
+        line_to_cell = np.sort(shared, axis=1)[:, :2]       # (M, 2)
+
+        return line_to_cell
+
+
+    def compute_cell_to_line(self):
+        """
+        Computes the cell to boundary-line mapping by intersecting
+        node_to_line rows for each pair of nodes in the triangle.
+
+        A line is adjacent to a cell if both its endpoint nodes belong
+        to that cell, i.e. it lies on one of the 3 edges (ab, bc, ca).
+        Each edge yields at most 1 boundary line.
+
+        Returns np.ndarray shape (num_cells, 3), NaN-padded.
+        Columns correspond to edges ab, bc, ca (sorted, NaN last).
+        """
+        node_to_line = self.compute_node_to_line()          # (N, max_adj)
+
+        if not len(node_to_line):
+            p_warning("No node_to_line mapping")
+            return np.array([])
+
+        A = node_to_line[self.cells[:, 0]]                  # (K, max_adj)
+        B = node_to_line[self.cells[:, 1]]
+        C = node_to_line[self.cells[:, 2]]
+
+        def _intersect(X, Y):
+            """First line-id shared between row-paired arrays X and Y -> (K, 1)."""
+            match   = (X[:, :, None] == Y[:, None, :]) & ~np.isnan(X[:, :, None])
+            in_both = np.where(match.any(axis=2), X, np.nan)   # (K, max_adj)
+            return np.sort(in_both, axis=1)[:, 0:1]            # (K, 1), NaN if none
+
+        edge_ab = _intersect(A, B)                          # (K, 1)
+        edge_bc = _intersect(B, C)                          # (K, 1)
+        edge_ca = _intersect(C, A)                          # (K, 1)
+
+        # Stack and sort so NaNs go last                    # (K, 3)
+        cell_to_line = np.sort(np.hstack([edge_ab, edge_bc, edge_ca]), axis=1)
+
+        return cell_to_line
+
+
+    def compute_node_to_vertex(self):
+        """
+        Computes the node to vertex mapping.
+        self.vertexes is the vertex_to_node mapping of shape (V, 1).
+        Each node is marked by at most one vertex, so the output is
+        typically (num_points, 1) with NaN for unmarked nodes.
+
+        Returns np.ndarray shape (num_points, max_adj), NaN-padded.
+        """
+        num_points   = self.num_points
+        num_vertexes = self.num_vertexes
+        
+        if not num_vertexes:
+            p_warning("No vertexes")
+            return np.array([])
+
+        nodes      = self.vertexes.ravel()                          # (V,)
+        vertex_ids = np.arange(num_vertexes)                        # (V,)
+
+        max_adj   = int(np.max(np.bincount(nodes, minlength=num_points)))
+
+        order      = np.argsort(nodes)
+        nodes      = nodes[order]
+        vertex_ids = vertex_ids[order]
+
+        counts    = np.bincount(nodes, minlength=num_points)
+        offsets   = np.cumsum(np.r_[0, counts[:-1]])
+        local_idx = np.arange(nodes.size) - offsets[nodes]
+
+        node_to_vertex = np.full((num_points, max_adj), np.nan)
+        node_to_vertex[nodes, local_idx] = vertex_ids
+
+        return node_to_vertex
+
+    def compute_cell_to_cell(self):
+        etc = self.compute_edge_to_cell()
+        if not len(etc):
+            p_error("Not able to compute cell_to_cell because of missing edge_to_cell mapping")
+            return np.array([])
+            
+        cte = self.compute_cell_to_edge()
+        cell_indexes = np.repeat(np.arange(self.num_cells), 6).reshape((self.num_cells, 3, 2))
+        
+        mask = (etc[cte] != cell_indexes)
+        
+        ctc_list = etc[cte][mask]
+        
+        ctc = np.sort(ctc_list.reshape((self.num_cells, 3)), axis=-1)
+        
+        return ctc
+    
     
     def _compute_dual_mesh_from_mappings(self, verbose: bool = False):
         with p_timer("Compute mappings", verbose=verbose):
@@ -809,7 +901,6 @@ class MeshDataProcessor(DataProcessor):
                 ])
         
             return Polygon(new_points)
-                
         
         with p_timer("Sort points inside the polygons", verbose=verbose):
             sorted_polygons = [
@@ -817,10 +908,8 @@ class MeshDataProcessor(DataProcessor):
                 for pts, tps, ref in zip(points_groups, types_groups, self.points_array)
                 ]
 
-        # order = np.argsort(mapping)
-        
-        # return full_centers, full_centers_mapping, center_types
         return sorted_polygons
+    
     
     def compute_quads_array(self, verbose: bool = False):
         """
@@ -831,7 +920,7 @@ class MeshDataProcessor(DataProcessor):
         Returns numpy.ndarray of shape (3*self.num_cells, 4, 3)
         """
 
-        with p_timer("Create edges", verbose=verbose):
+        with p_timer("Creating the edges", verbose=verbose):
             # simple renaming of usefull data
             cells = self.cells
             num_cells  = self.num_cells
@@ -848,12 +937,12 @@ class MeshDataProcessor(DataProcessor):
                 cells[:, [2, 0]]
                 ])
         
-        with p_timer("Create edge centers", verbose=verbose):
+        with p_timer("Creating the edge centers", verbose=verbose):
             # get edges centers in this same order
             edge_centers_array_list = points_array[edges].mean(axis=1)
         
         
-        with p_timer("Modify the edgecenters to the right shape", verbose=verbose):
+        with p_timer("Modifying the edgecenters to the right shape", verbose=verbose):
             # Rearange edge centers to get a shape (num_cells, 3 points, 3 coords)
             edge_centers_array_block = np.array([
                 edge_centers_array_list[:num_cells],
@@ -866,11 +955,11 @@ class MeshDataProcessor(DataProcessor):
                 [1, 0, 2]
                 )
         
-        with p_timer("compute the cell to node coordinates", verbose=verbose):
+        with p_timer("Computing the cell to node coordinates", verbose=verbose):
             # Get the cell to node coordinates in the same shape (num_cells, 3 points, 3 coords)
             cell_node_array_ori = points_array[cells]
         
-        with p_timer("compute the cells centers in the right shape", verbose=verbose):
+        with p_timer("Computing the cells centers in the right shape", verbose=verbose):
             # get the cells centers in shape (num_cells, 3 times the center, 3 coords)
             cell_centers_array_ori_list = np.repeat(cell_centers_array, 3)
             cell_centers_array_ori_list_reshape = cell_centers_array_ori_list.reshape(
@@ -882,7 +971,7 @@ class MeshDataProcessor(DataProcessor):
                 [0, 2, 1]
                 )
         
-        with p_timer("Create the quads in a block", verbose=verbose):
+        with p_timer("Creating the quads in a block", verbose=verbose):
             # Construct the quads from the points in the following order : 
             #          [ cell node, 1st edge point, cell center, previous edge point ]
             quads_array_block = np.array([
@@ -892,7 +981,7 @@ class MeshDataProcessor(DataProcessor):
                 np.roll(edge_centers_array, 1, axis=1)
                 ])
             
-        with p_timer("Order the axis of the block", verbose=verbose):
+        with p_timer("Ordering the axis of the block", verbose=verbose):
             # Reorder coordinates in (num_cells, 3 quads, 4 points, 3 coords)
             quads_array_ordered = np.moveaxis(
                 quads_array_block, 
@@ -900,68 +989,577 @@ class MeshDataProcessor(DataProcessor):
                 [2, 0, 1, 3]
                 )
             
-        with p_timer("reshape the quads array", verbose=verbose):
+        with p_timer("Reshaping the quads array", verbose=verbose):
             # Reshape in (3*num_cells = num_quads, 4 points, 3 coords)
             quads_array = quads_array_ordered.reshape(3*num_cells, 4, 3)
         
         return quads_array
     
     
-    
-    # def compute_dual_mesh(self, batch_size=10_000):
-    #     """
-    #     Merge all quads attached to each node into a single polygon.
-    
-    #     Returns
-    #     -------
-    #     numpy.ndarray of shapely geometries
-    #         Shape: (num_points,)
-    #     """
-    #     num_points = self.num_points
+    def compute_all_boundary_edges(self) -> np.array:
+        """
+        Returns a np.array of pairs of node indices forming all boundary edges.
+        """
+        etc = self.compute_edge_to_cell() # np.nan as second element if no cell
+        if not len(etc):
+            p_error("Not able to compute all_boundary_edges because of missing edge_to_cell mapping")
+            return np.array([])
         
-    #     with p_timer("Full timing for the quads creation"):
-    #         # 1) Build quad polygons (vectorized, fast)
-    #         quads_array = self.compute_quads_array()
-    #         quads_xy = quads_array[..., :2]                   # (3*N, 4, 2) — still just a view
+        etn = self.compute_edge_to_node()
+        
+        return etn[np.isnan(etc[:, 1])]
+    
+    
+    def compute_all_boundary_nodes(self) -> np.array:
+        """
+        Returns a np.array of node indices forming all boundary nodes.
+        """
+        bnd_edge = self.compute_all_boundary_edges()
+        if not len(bnd_edge):
+            p_error("Not able to compute all_boundary_nodes because of missing boundary_edges mapping")
+            return np.array([])
+        
+        return np.unique(bnd_edge.ravel())
+    
+    
+    def compute_all_points_array_edge(self) -> typing.Tuple[np.ndarray, int]:
+        """
+        Extract unique boundary point coordinates.
+        
+        Returns:
+            edgepoints_array
+        """
+        bnd_edges = self.compute_all_boundary_edges()
+        bnd_nodes = np.unique(bnd_edges.ravel())
+        
+        return self.points_array[bnd_nodes]
+    
+    
+    def compute_cell_groups(self):
+        ctc = self.compute_cell_to_cell()
+        n_cells = self.num_cells
+        
+        if not len(ctc) == n_cells:
+            p_error("Not able to compute cell_groups because of missing cell_to_cell mapping")
+            return []
+    
+        row_ids, col_positions = np.where(~np.isnan(ctc))
+        neighbor_ids = ctc[row_ids, col_positions].astype(np.int32)
+        row_ids = row_ids.astype(np.int32)
+    
+        mask = row_ids < neighbor_ids
+        row_ids, neighbor_ids = row_ids[mask], neighbor_ids[mask]
+    
+        data = np.ones(len(row_ids), dtype=np.int8)
+        adjacency = csr_matrix((data, (row_ids, neighbor_ids)), shape=(n_cells, n_cells))
+    
+        n_groups, labels = connected_components(adjacency, directed=False)
+    
+        # Sort cells by label for efficient slicing
+        order = np.argsort(labels, kind="stable")
+        sorted_labels = labels[order]
+        split_points = np.where(np.diff(sorted_labels))[0] + 1
+        groups = np.split(order, split_points)
+    
+        return groups
+    
+    
+# =============================================================================
+#     ALL MESH CHECKING
+# =============================================================================
+    def check_bottleneck_cells(self):
+        """
+        Returns an array of indexes of cells composed only of all boundary nodes
+        """
+        bnd_nodes = self.compute_all_boundary_nodes()
+        if not len(bnd_nodes):
+            p_error("Cannot compute bottleneck cells because of missing boundary_nodes")
+            return np.array([])
+    
+        # Boolean mask: True for each node index that is a boundary node
+        is_boundary = np.isin(self.cells, bnd_nodes)
+    
+        # A bottleneck cell has all 3 nodes on the boundary
+        bottleneck_mask = is_boundary.all(axis=1)
+    
+        return np.where(bottleneck_mask)[0]
+    
+    
+    def check_floating_cells(self):
+        """
+        Returns an array of indexes of unconnected triangles to the main mesh
+        """
+        groups = self.compute_cell_groups()
+        N_groups = len(groups)
+        if N_groups < 2:
+            return np.array([])
+        else:
+            len_groups = np.array([len(g) for g in groups])
+            small_groups = [
+                groups[i] 
+                for i in range(N_groups) 
+                if len_groups[i] != max(len_groups)
+                ]
+            return np.concatenate(small_groups)
+    
+    
+    def check_floating_nodes(self):
+        """
+        Returns an array of nodes indexes not referenced by any triangle
+        """
+        used_by_triangle = np.unique(self.cells)
+        all_nodes = np.arange(self.num_points)
+        return np.setdiff1d(all_nodes, used_by_triangle)
+        
+        
+    def check_floating_vertexes(self):
+        """
+        Returns a np.array of vertexes index for which the node does not 
+        touch any triangle
+        """
+        if self.num_vertexes:
+            used_by_triangle = np.unique(self.cells)
+            # self.vertexes is (V, 1), flatten to (V,) for isin
+            floating_mask = ~np.isin(self.vertexes.ravel(), used_by_triangle)
+            return np.where(floating_mask)[0]
+        else :
+            return np.array([])
+        
+        
+    def check_floating_lines(self):
+        """
+        Returns a np.array of line index that are not connected to any 
+        triangular cell
+        """
+        if self.num_lines:
+            ltc = self.compute_line_to_cell() 
+            # np.nan in first column if no cell attached
+            return np.arange(self.num_lines)[np.isnan(ltc[:,0])]
+        else :
+            return np.array([])
+        
+        
+    def check_lines_not_boundary(self) -> np.ndarray:
+        """
+        Returns indices of line elements that are connected to 2 triangular cells
+        (i.e. interior lines, not true boundary lines).
+        Uses compute_line_to_cell(): a boundary line has NaN in column 1.
+        """
+        if not self.num_lines:
+            return np.array([], dtype=int)
+    
+        ltc = self.compute_line_to_cell()              # (L, 2)
+        interior_mask = ~np.isnan(ltc[:, 1])           # both columns filled -> interior
+        
+        return np.where(interior_mask)[0]
 
-    #     with p_timer("Node to quad connectivity — flatten"):
-    #         node_to_quad = self.compute_node_to_quad()
+
+    def check_boundary_edges_not_in_lines(self):
+        """
+        Returns a np.array of pairs of boundary nodes which are not referenced 
+        as lines. 
+        (Useful for checking the validity of Tolosa meshes)
+        """
+        boundary_edges = np.sort(self.compute_all_boundary_edges(), axis=-1) 
+        if not len(boundary_edges):
+            p_warning("No boundary edges")
+            return np.array([])
+        
+        if not self.num_lines:
+            p_warning("No lines")
+            return np.sort(self.compute_all_boundary_edges(), axis=-1) 
+        lines = np.sort(self.lines, axis=-1)
+        
+        dtype = np.dtype([('i', boundary_edges.dtype), 
+                          ('j', boundary_edges.dtype)])
+        boundary_edges_view = boundary_edges.view(dtype).reshape(-1)
+        lines_view = lines.view(dtype).reshape(-1)
+        
+        diff = np.setdiff1d(boundary_edges_view, lines_view)
+        
+        return(diff.view(boundary_edges.dtype).reshape(-1, 2))
     
-    #         flat_quad_ids = node_to_quad.ravel()
-    #         flat_node_ids = np.repeat(np.arange(num_points), node_to_quad.shape[1])
+
+    def check_cells_angles(self, 
+                           threshold: float = 10):
+        """
+        Returns a np.array of node index for triangular cells that display at 
+        least one angle smaller than threshold
+        """
+        triangles = self.points_array[self.cells][:,:,:2]
+        
+        # triangles shape: (N, 3, 2)
+        A = triangles[:, 0, :]
+        B = triangles[:, 1, :]
+        C = triangles[:, 2, :]
+        
+        # Edge vectors
+        AB = B - A
+        AC = C - A
+        BA = A - B
+        BC = C - B
+        CA = A - C
+        CB = B - C
+        
+        def angle(u, v):
+            dot = np.einsum('ij,ij->i', u, v)
+            norm_u = np.linalg.norm(u, axis=1)
+            norm_v = np.linalg.norm(v, axis=1)
+            cos_theta = dot / (norm_u * norm_v)
+            
+            # numerical safety
+            cos_theta = np.clip(cos_theta, -1.0, 1.0)
+            
+            return np.arccos(cos_theta)
+        
+        angle_A = angle(AB, AC)
+        angle_B = angle(BA, BC)
+        angle_C = angle(CA, CB)
+        
+        angles = np.rad2deg(np.stack([angle_A, angle_B, angle_C], axis=1))
+        mask_angles = angles.min(axis=-1)<threshold
+        
+        return np.arange(self.num_cells)[mask_angles]
     
-    #         mask          = ~np.isnan(flat_quad_ids)
-    #         flat_quad_ids = flat_quad_ids[mask].astype(int)
-    #         flat_node_ids = flat_node_ids[mask]
     
-    #         split_idx     = np.flatnonzero(np.diff(flat_node_ids)) + 1
-    #         quad_id_groups = np.split(flat_quad_ids, split_idx)
-    #         present_nodes  = flat_node_ids[np.concatenate([[0], split_idx])]
+    def check_cell_size(self, 
+                        min_reso: float = .1):
+        """
+        Returns indices of triangular cells whose mean edge length is lower 
+        than min_reso.
+        """
+        triangles = self.points_array[self.cells][:,:,:2]
+        
+        # Edge vectors
+        e0 = triangles[:, 1] - triangles[:, 0]
+        e1 = triangles[:, 2] - triangles[:, 1]
+        e2 = triangles[:, 0] - triangles[:, 2]
     
-    #     node_polygons = np.full(num_points, None, dtype=object)
+        # Edge lengths
+        l0 = np.linalg.norm(e0, axis=1)
+        l1 = np.linalg.norm(e1, axis=1)
+        l2 = np.linalg.norm(e2, axis=1)
     
-    #     with p_timer("Merge quads per node in batches"):
-    #         p_ok("Merge quads per node in batches")
-    #         for batch_start in range(0, len(present_nodes), batch_size):
-    #             p_ok(f"    batch {batch_start//batch_size} sur {len(present_nodes)//batch_size}")
-    #             batch_nodes  = present_nodes[batch_start : batch_start + batch_size]
-    #             batch_groups = quad_id_groups[batch_start : batch_start + batch_size]
+        mean_length = (l0 + l1 + l2) / 3.0
     
-    #             # Collect unique quad ids needed for this batch only
-    #             batch_quad_ids = np.unique(np.concatenate(batch_groups))
+        return np.where(mean_length < min_reso)[0]
     
-    #             # Build Shapely polygons only for this batch's quads
-    #             batch_polys = polygons(quads_xy[batch_quad_ids])
     
-    #             # Remap global quad ids to local indices within batch_polys
-    #             remap = np.empty(quads_xy.shape[0], dtype=np.intp)
-    #             remap[batch_quad_ids] = np.arange(len(batch_quad_ids))
+    def check_duplicates(self, 
+                         element_type: str = "line", 
+                         decimals:     int = 8):
+        """
+        Returns a np.array of indexes of elements found as duplicate of 
+        previous elements. element_type must be one of 'node', 'vertex', 'line'
+        or 'triangle'.
+        """
+        if element_type == "node":
+            elements = self.points_array[:,:2].round(decimals=decimals)
+        elif element_type == "vertex":
+            elements = self.vertexes
+        elif element_type == "line":
+            elements = self.lines
+        elif element_type == "triangle":
+            elements = self.cells
+        else:
+            raise ValueError("element_type must be 'node', 'vertex', 'line' or 'triangle'")
     
-    #             for nid, grp in zip(batch_nodes, batch_groups):
-    #                 node_polygons[nid] = coverage_union_all(batch_polys[remap[grp]])
+        if elements is None or len(elements) == 0:
+            return np.array([], dtype=int)
+        
+        # Sort node indices within each row so orientation doesn't matter.
+        # Nodes are always integers except for the 'node' type (XY coordinates).
+        if element_type == "node":
+            # Floating-point rows: use void view on the rounded float64 bytes
+            sorted_elements = np.ascontiguousarray(elements, dtype=np.float64)
+        else:
+            sorted_elements = np.sort(
+                np.ascontiguousarray(elements, dtype=np.int64), axis=1
+            )
     
-    #     return node_polygons
+        # Void-view: collapse each row into one opaque scalar for a fast 1-D unique
+        row_dtype = np.dtype((np.void, sorted_elements.dtype.itemsize * sorted_elements.shape[1]))
+        row_view  = sorted_elements.view(row_dtype).ravel()
     
+        # first_occurrence contains the indices of the first time each unique
+        # signature appears — everything else is a duplicate
+        _, first_occurrence = np.unique(row_view, return_index=True)
+    
+        is_first              = np.zeros(len(elements), dtype=bool)
+        is_first[first_occurrence] = True
+        
+        return np.where(~is_first)[0]
+    
+    
+    def check_duplicates_local(self,
+                               local_indices: np.ndarray,
+                               element_type:  str = "line",
+                               decimals:      int = 8) -> np.ndarray:
+        """
+        Returns a np.array of global indices of elements found as duplicates,
+        restricted to local_indices. An element is flagged only if an earlier
+        global copy (local or not) already exists.
+        element_type must be one of 'node', 'vertex', 'line' or 'triangle'.
+        """
+        local_indices = np.atleast_1d(local_indices)
+        
+        if element_type == "node":
+            elements = self.points_array[:, :2].round(decimals=decimals)
+        elif element_type == "vertex":
+            elements = self.vertexes
+        elif element_type == "line":
+            elements = self.lines
+        elif element_type == "triangle":
+            elements = self.cells
+        else:
+            raise ValueError("element_type must be 'node', 'vertex', 'line' or 'triangle'")
+    
+        if elements is None or len(elements) == 0 or len(local_indices) == 0:
+            return np.array([], dtype=int)
+    
+        if element_type == "node":
+            sorted_elements = np.ascontiguousarray(elements, dtype=np.float64)
+        else:
+            sorted_elements = np.sort(
+                np.ascontiguousarray(elements, dtype=np.int64), axis=1
+            )
+    
+        row_dtype = np.dtype((np.void, sorted_elements.dtype.itemsize * sorted_elements.shape[1]))
+        row_view  = sorted_elements.view(row_dtype).ravel()
+    
+        _, first_occurrence = np.unique(row_view, return_index=True)
+    
+        is_first                   = np.zeros(len(elements), dtype=bool)
+        is_first[first_occurrence] = True
+
+        return local_indices[~is_first[local_indices]]
+    
+    
+    def check_degenerate(self, 
+                         element_type: str="triangle"):
+        """
+        Returns a np.array of indexes of degenerate elements (elements with two
+        or more identical node indices). element_type must be 'line' or 
+        'triangle'.
+        """
+        
+        if element_type == "line":
+            elements = self.lines
+        elif element_type == "triangle":
+            elements = self.cells
+        else:
+            raise ValueError("element_type must be 'line' or 'triangle'")
+    
+        if elements is None or len(elements) == 0:
+            return np.array([], dtype=int)
+    
+        if element_type == "line":
+            # Degenerate if both node indices are identical
+            degen_mask = elements[:, 0] == elements[:, 1]
+    
+        elif element_type == "triangle":
+            # Degenerate if any two of the three node indices are identical
+            n0, n1, n2 = elements[:, 0], elements[:, 1], elements[:, 2]
+            degen_mask = (n0 == n1) | (n1 == n2) | (n0 == n2)
+    
+        return np.where(degen_mask)[0]
+    
+    
+    def check_degenerate_local(self,
+                               local_indices: np.ndarray,
+                               element_type:  str = "triangle") -> np.ndarray:
+        """
+        Returns a np.array of global indices of degenerate elements (elements
+        with two or more identical node indices), restricted to local_indices.
+        element_type must be 'line' or 'triangle'.
+        """
+        local_indices = np.atleast_1d(local_indices)
+        
+        if element_type == "line":
+            elements = self.lines
+        elif element_type == "triangle":
+            elements = self.cells
+        else:
+            raise ValueError("element_type must be 'line' or 'triangle'")
+    
+        if elements is None or len(elements) == 0 or len(local_indices) == 0:
+            return np.array([], dtype=int)
+    
+        subset = elements[local_indices]
+    
+        if element_type == "line":
+            degen_mask = subset[:, 0] == subset[:, 1]
+        else:
+            n0, n1, n2 = subset[:, 0], subset[:, 1], subset[:, 2]
+            degen_mask  = (n0 == n1) | (n1 == n2) | (n0 == n2)
+    
+        return local_indices[degen_mask]
+    
+    
+    def check_triangle_orientation(self):
+        """
+        Returns a np.array of indexes of triangular cells in clockwise 
+        direction (these triangles should be swapped)
+        """
+        points_array = self.points_array
+        cells = self.cells
+        
+        A = points_array[cells[:, 0]]
+        B = points_array[cells[:, 1]]
+        C = points_array[cells[:, 2]]
+        
+        cross = (B[:, 0]-A[:, 0])*(C[:, 1]-A[:, 1]) - (B[:, 1]-A[:, 1])*(C[:, 0]-A[:, 0])
+        
+        return np.where(cross<0)[0]
+    
+    
+    def check_validity(self, 
+                       threshold: float=10, 
+                       min_reso:  float=.1, 
+                       verbose:   bool=False) -> dict:
+        """
+        Returns a dict of basic issues found in the mesh:
+          - floating_nodes/vertexes/lines : indexes of elements not connected 
+          to at least one triangular cell (should be removed)
+          - duplicate_nodes/vertexes/lines/cells : indexes of elements that are
+          duplicates of previous element (should be removed)
+        """
+        issues = {}
+    
+        # --- Floating elements (not referenced by any triangle) ---
+        with p_timer("Looking for floating_nodes", verbose=verbose):
+            issues["floating_nodes"] = self.check_floating_nodes()
+        with p_timer("Looking for floating_vertexes", verbose=verbose):
+            issues["floating_vertexes"] = self.check_floating_vertexes()
+        with p_timer("Looking for floating_lines", verbose=verbose):
+            issues["floating_lines"] = self.check_floating_lines()
+        
+        # --- Duplicate elements ---
+        with p_timer("Looking for duplicate_nodes", verbose=verbose):
+            issues["duplicate_nodes"] = self.check_duplicates("node")
+        with p_timer("Looking for duplicate_vertexes", verbose=verbose):
+            issues["duplicate_vertexes"] = self.check_duplicates("vertex")
+        with p_timer("Looking for duplicate_lines", verbose=verbose):
+            issues["duplicate_lines"] = self.check_duplicates("line")
+        with p_timer("Looking for duplicate_cells", verbose=verbose):
+            issues["duplicate_cells"] = self.check_duplicates("triangle")
+        
+        # --- Degenerate triangles (two or more identical node indices) ---
+        with p_timer("Looking for degenerate_line", verbose=verbose):
+            issues["degenerate_line"] = self.check_degenerate("line")
+        with p_timer("Looking for degenerate_cells", verbose=verbose):
+            issues["degenerate_cells"] = self.check_degenerate("triangle")
+        
+        # --- Distorted triangles ---
+        with p_timer("Looking for distorted_cells", verbose=verbose):
+            issues["distorted_cells"] = self.check_cells_angles(threshold=threshold)
+        
+        # --- Misoriented cells (clockwise order of nodes) ---
+        with p_timer("Looking for clockwise_cells", verbose=verbose):
+            issues["clockwise_cells"] = self.check_triangle_orientation()
+        
+        # --- Triangular cells of smaller size than expected ---
+        with p_timer("Looking for small_cells", verbose=verbose):
+            issues["small_cells"] = self.check_cell_size(min_reso=min_reso)
+        
+        # # ===================================================================
+        # # Here are some checks that are not always useful and much slower
+        # # ===================================================================
+        # # --- boundary edge of the mesh not in lines ---
+        # with p_timer("Looking for missing_bnd", verbose=verbose):
+        #     issues["missing_bnd"] = self.check_boundary_edges_not_in_lines()
+        
+        # # --- Floating cells unconnected to the main mesh ---
+        # with p_timer("Looking for floating_cells", verbose=verbose):
+        #     issues["floating_cells"] = self.check_floating_cells()
+        
+        # # --- Bottleneck cells (only one neighbouring cell)  ---
+        # with p_timer("Looking for bottleneck_cells", verbose=verbose):
+        #     issues["bottleneck_cells"] = self.check_bottleneck_cells()
+        
+        return issues
+    
+    
+# =============================================================================
+#     USEFUL OPERATIONS ON THE MESH FOR SAVING OR PLOTTING
+# =============================================================================
+
+    def compute_triangulations(self) -> tuple:
+        """
+        Compute matplotlib triangulations for triangle meshes.
+        
+        Returns:
+            Tuple of (tripcolor_triangulation, tricontour_triangulation)
+        """
+        if self.cell_type != 'all_Triangle':
+            raise ValueError("Triangulations only supported for all-triangle meshes")
+        
+        # Get triangle cell connectivity
+        triangle_cells = self.cells
+        if not len(triangle_cells) :
+            raise ValueError("No triangle cells found")
+        
+        # Create tripcolor triangulation (for coloring faces)
+        tripcolor_triangulation = mpl.tri.Triangulation(
+            self.points_array[:, 0],
+            self.points_array[:, 1],
+            triangles=triangle_cells
+        )
+        
+        # Create tricontour triangulation (for contouring at cell centers)
+        tricontour_triangulation = mpl.tri.Triangulation(
+            self.cell_centers_array[:, 0],
+            self.cell_centers_array[:, 1]
+        )
+        
+        # Create mask for tricontour to avoid large triangles
+        xtri = self.cell_centers_array[:, 0][tricontour_triangulation.triangles] - \
+               np.roll(self.cell_centers_array[:, 0][tricontour_triangulation.triangles], 1, axis=1)
+        ytri = self.cell_centers_array[:, 1][tricontour_triangulation.triangles] - \
+               np.roll(self.cell_centers_array[:, 1][tricontour_triangulation.triangles], 1, axis=1)
+        
+        # Compute characteristic cell size
+        min_cells = self.points_array[triangle_cells].min(axis=1)
+        max_cells = self.points_array[triangle_cells].max(axis=1)
+        sizes = max_cells - min_cells
+        max_size = max(np.hypot(sizes[:, 0], sizes[:, 1]))
+        
+        # Apply mask
+        tricontour_triangulation.set_mask(
+            np.max(np.sqrt(xtri**2 + ytri**2), axis=1) > max_size
+        )
+        
+        return tripcolor_triangulation, tricontour_triangulation
+    
+    def _linestrings_from_edges(self, edges: np.ndarray, points: np.ndarray):
+        """
+        Convert edges (M,2) to merged shapely LineString / MultiLineString.
+        """
+        segments = linestrings(points[edges])
+
+        merged = linemerge(segments)
+        return merged
+    
+    def compute_lines_by_physical(self):
+        phys = self.line_data["gmsh:physical"]
+        result = {}
+        link = dict([(v[0], k) for k, v in self.data.field_data.items()])
+    
+        for pid in np.unique(phys):
+            edges = self.lines[phys == pid]
+            merged = self._linestrings_from_edges(edges, self.points_array)
+            result[link[int(pid)]] = merged
+        return result
+    
+    def compute_lines_by_geometrical(self):
+        phys = self.line_data["gmsh:geometrical"]
+        result = {}
+    
+        for pid in np.unique(phys):
+            edges = self.lines[phys == pid]
+            merged = self._linestrings_from_edges(edges, self.points_array)
+            result[int(pid)] = merged
+        return result
     
     
     def compute_dual_mesh(self, verbose: bool = False):
@@ -1100,20 +1698,76 @@ class MeshDataProcessor(DataProcessor):
         node_polygons[present_nodes] = all_polygons
         return node_polygons
     
+    
+    # def compute_dual_mesh(self, batch_size=10_000):
+    #     """
+    #     Merge all quads attached to each node into a single polygon.
+    
+    #     Returns
+    #     -------
+    #     numpy.ndarray of shapely geometries
+    #         Shape: (num_points,)
+    #     """
+    #     num_points = self.num_points
+        
+    #     with p_timer("Full timing for the quads creation"):
+    #         # 1) Build quad polygons (vectorized, fast)
+    #         quads_array = self.compute_quads_array()
+    #         quads_xy = quads_array[..., :2]                   # (3*N, 4, 2) — still just a view
+
+    #     with p_timer("Node to quad connectivity — flatten"):
+    #         node_to_quad = self.compute_node_to_quad()
+    
+    #         flat_quad_ids = node_to_quad.ravel()
+    #         flat_node_ids = np.repeat(np.arange(num_points), node_to_quad.shape[1])
+    
+    #         mask          = ~np.isnan(flat_quad_ids)
+    #         flat_quad_ids = flat_quad_ids[mask].astype(int)
+    #         flat_node_ids = flat_node_ids[mask]
+    
+    #         split_idx     = np.flatnonzero(np.diff(flat_node_ids)) + 1
+    #         quad_id_groups = np.split(flat_quad_ids, split_idx)
+    #         present_nodes  = flat_node_ids[np.concatenate([[0], split_idx])]
+    
+    #     node_polygons = np.full(num_points, None, dtype=object)
+    
+    #     with p_timer("Merge quads per node in batches"):
+    #         p_ok("Merge quads per node in batches")
+    #         for batch_start in range(0, len(present_nodes), batch_size):
+    #             p_ok(f"    batch {batch_start//batch_size} sur {len(present_nodes)//batch_size}")
+    #             batch_nodes  = present_nodes[batch_start : batch_start + batch_size]
+    #             batch_groups = quad_id_groups[batch_start : batch_start + batch_size]
+    
+    #             # Collect unique quad ids needed for this batch only
+    #             batch_quad_ids = np.unique(np.concatenate(batch_groups))
+    
+    #             # Build Shapely polygons only for this batch's quads
+    #             batch_polys = polygons(quads_xy[batch_quad_ids])
+    
+    #             # Remap global quad ids to local indices within batch_polys
+    #             remap = np.empty(quads_xy.shape[0], dtype=np.intp)
+    #             remap[batch_quad_ids] = np.arange(len(batch_quad_ids))
+    
+    #             for nid, grp in zip(batch_nodes, batch_groups):
+    #                 node_polygons[nid] = coverage_union_all(batch_polys[remap[grp]])
+    
+    #     return node_polygons
+    
+    
     def compute_median_depth_per_node_tiled(
             self,
-            X_bathy: np.ndarray,
-            Y_bathy: np.ndarray,
-            bathy: np.ndarray,
+            X_bathy:      np.ndarray,
+            Y_bathy:      np.ndarray,
+            bathy:        np.ndarray,
             points_array: np.ndarray,
-            dual: np.ndarray,
-            nodata: int = 0,
-            min_points: int = 5,
-            row_chunk: int = 256,       # number of bathy rows per chunk — controls memory
-            verbose: bool = False
+            dual:         np.ndarray,
+            nodata:       int = 0,
+            min_points:   int = 5,
+            row_chunk:    int = 256,       # number of bathy rows per chunk — controls memory
+            verbose:      bool = False
         ) -> np.ndarray:
     
-        n_nodes = self.num_points
+        n_nodes = len(points_array)
         nrows, ncols = bathy.shape
     
         x_flat = X_bathy.ravel()        # (nrows*ncols,)  — views, no copy
@@ -1130,7 +1784,7 @@ class MeshDataProcessor(DataProcessor):
             for chunk_start in range(0, nrows * ncols, chunk_pixels):
                 chunk_end = min(chunk_start + chunk_pixels, nrows * ncols)
     
-                # ── Build Shapely points for this chunk (vectorized, no Python loop) ──
+                # -- Build Shapely points for this chunk (vectorized, no Python loop) --
                 pts = points(x_flat[chunk_start:chunk_end],
                                      y_flat[chunk_start:chunk_end])
                 
@@ -1180,14 +1834,13 @@ class MeshDataProcessor(DataProcessor):
         with p_timer("Nearest-neighbour fallback", verbose=verbose):
             outside_mask = np.isnan(depth_per_node)
             if outside_mask.any():
-                print(f"  {outside_mask.sum()}/{n_nodes} nodes outside extent — NN fallback")
+                p_warning(f"  {outside_mask.sum()}/{n_nodes} nodes outside extent — NN fallback")
                 bathy_xy       = np.column_stack([x_flat, y_flat])
                 tree           = cKDTree(bathy_xy)
                 _, nearest_idx = tree.query(points_array[outside_mask, :2], workers=-1)
                 depth_per_node[outside_mask] = z_flat[nearest_idx]
     
         return depth_per_node
-    
     
     
     def compute_bathy_at_node(self, 
@@ -1212,19 +1865,121 @@ class MeshDataProcessor(DataProcessor):
         return depth_per_node
     
     
+    def compute_boundary_polygon_list(self) -> list:
+        """
+        Create list of boundary polygons from boundary edges.
+        
+        Returns:
+            list: List of Shapely Polygon objects
+        """
+        bnd_edges = self.compute_all_boundary_edges()
+        
+        list_LineString = linestrings(self.points_array[bnd_edges][:, :, :2])
+        
+        # Use polygonize to create polygons from line segments
+        boundary_polygon_list = [geom for geom in polygonize(list_LineString).geoms]
+        
+        return boundary_polygon_list
+    
+    
+    def compute_boundary_polygon(self) -> Polygon:
+        """
+        Create a single boundary polygon with holes.
+        
+        The largest polygon by area is used as the shell, and smaller polygons as holes.
+        
+        Returns:
+            Polygon: Shapely Polygon object
+        """
+        boundary_polygon_list = self.compute_boundary_polygon_list()
+        
+        if not boundary_polygon_list:
+            # Return empty polygon if no boundaries
+            return Polygon()
+        
+        if len(boundary_polygon_list) == 1:
+            return boundary_polygon_list[0]
+        
+        # Find the polygon with largest area (outer boundary)
+        all_polygons_area = [geom.area for geom in boundary_polygon_list]
+        max_area_idx = all_polygons_area.index(max(all_polygons_area))
+        biggest_polygon = boundary_polygon_list[max_area_idx]
+        
+        # All other polygons are holes
+        other_polygons = [boundary_polygon_list[i] 
+                         for i in range(len(boundary_polygon_list)) 
+                         if i != max_area_idx]
+        
+        # Create polygon with shell and holes
+        boundary_polygon = Polygon(shell=biggest_polygon.exterior.coords, 
+                                  holes=[p.exterior.coords for p in other_polygons])
+        
+        return boundary_polygon
+
+
+    def reshape_to_grid(self):
+        """
+        Reshape data to grid format for quad cells. 
+        --- NOT WORKING FOR UNSTRUCTURED MESHES ---
+        
+        Returns:
+            Tuple of grid X coordinates, grid Y coordinates, and reshaped cell data
+        """
+        shape = [len(np.unique(self.cell_centers_array[:, 0])),
+                len(np.unique(self.cell_centers_array[:, 1]))]
+        center_grid_X = self.cell_centers_array[:, 0].reshape(shape)
+        center_grid_Y = self.cell_centers_array[:, 1].reshape(shape)
+        cell_data_grid = {k: v.reshape(shape) for k, v in self.cell_data.items()}
+        
+        return center_grid_X, center_grid_Y, cell_data_grid
+    
+
+# =============================================================================
+#     OPERATIONS TO PRODUCE NEW PROCESSOR OBJECTS 
+# =============================================================================
+
+
     def convert_tolosa_mesh_to_ww3(self, 
                                    bnd_tag_list: np.ndarray,
-                                   X_bathy: np.ndarray, 
-                                   Y_bathy: np.ndarray, 
-                                   bathy: np.ndarray,
-                                   verbose: bool = False):
+                                   X_bathy:      np.ndarray | None = None, 
+                                   Y_bathy:      np.ndarray | None = None, 
+                                   bathy:        np.ndarray | None = None,
+                                   verbose:      bool = False):
+        """
+        Returns a new MeshDataProcessor object containing a 
+        Parameters
+        ----------
+        bnd_tag_list : np.ndarray
+            DESCRIPTION.
+        X_bathy : np.ndarray
+            DESCRIPTION.
+        Y_bathy : np.ndarray
+            DESCRIPTION.
+        bathy : np.ndarray
+            DESCRIPTION.
+        verbose : bool, optional
+            DESCRIPTION. The default is False.
+
+        Returns
+        -------
+        new_processor : TYPE
+            DESCRIPTION.
+
+        """
         
         with p_timer("Computing bathy at nodes", verbose=verbose):
-            # Compute depths at nodes
-            new_depths = self.compute_bathy_at_node(X_bathy, 
-                                                    Y_bathy, 
-                                                    bathy,
-                                                    verbose=verbose)
+            if X_bathy is None or Y_bathy is None or bathy is None:
+                p_warning("No valid X_bathy, Y_bathy or bathy - keeping node depths as is")
+                new_depths = self.points_array[:,-1]
+            elif not X_bathy.shape == Y_bathy.shape == bathy.shape:
+                p_warning("No valid X_bathy, Y_bathy or bathy shape - keeping node depths as is")
+                new_depths = self.points_array[:,-1]
+            else:
+                # Compute depths at nodes
+                new_depths = self.compute_bathy_at_node(X_bathy, 
+                                                        Y_bathy, 
+                                                        bathy,
+                                                        verbose=verbose)
         
         
         with p_timer("Creating the equivalent ww3 Mesh object", 
@@ -1243,7 +1998,7 @@ class MeshDataProcessor(DataProcessor):
             if 'line' in self.data.cells_dict.keys():
                 line_cells = self.data.cells_dict['line']  # shape (n_lines, 2)
             else:
-                p_error('Pas de line en frontière')
+                p_error('No line in the input mesh')
                 return
             
             # Boolean mask: which lines belong to the selected tags
@@ -1284,6 +2039,865 @@ class MeshDataProcessor(DataProcessor):
         return new_processor
     
     
+    def global_to_meshio(
+        self,
+        node_indices_gmsh:   np.ndarray | list | None = None,
+        cell_indices_gmsh:   np.ndarray | list | None = None,
+        line_indices_gmsh:   np.ndarray | list | None = None,
+        vertex_indices_gmsh: np.ndarray | list | None = None,
+        ) -> dict:
+        """
+        Translate gmsh GUI element/node numbering to meshio numbering.
+    
+        gmsh differences vs meshio
+        --------------------------
+        - Nodes    : 1-based  ->  meshio 0-based  (subtract 1)
+        - Elements : globally numbered across ALL blocks in block order,
+                     1-based  ->  meshio per-block 0-based index
+    
+        Parameters
+        ----------
+        node_indices_gmsh   : gmsh node indices (1-based)
+        cell_indices_gmsh   : gmsh global element indices for triangles (1-based)
+        line_indices_gmsh   : gmsh global element indices for lines (1-based)
+        vertex_indices_gmsh : gmsh global element indices for vertexes (1-based)
+    
+        Returns
+        -------
+        dict with keys 'node_indices', 'cell_indices', 'line_indices',
+        'vertex_indices' — all 0-based meshio indices, or None if not requested.
+        """
+        # --- Build block offset table (cumulative element counts per block) ------
+        block_sizes   = np.array([len(b.data) for b in self.data.cells], dtype=np.intp)
+        block_offsets = np.concatenate([[0], np.cumsum(block_sizes)])   # (n_blocks+1,)
+    
+        def _global_to_local(gmsh_indices, target_block_index):
+            """
+            Convert 1-based gmsh global element indices to 0-based local indices
+            within the block at target_block_index.
+            Raises ValueError if any index does not belong to that block.
+            """
+            if gmsh_indices is None:
+                return None
+            arr = np.atleast_1d(np.asarray(gmsh_indices, dtype=np.intp)).ravel()
+            # gmsh is 1-based -> 0-based global
+            global_0 = arr - 1
+            block_start = block_offsets[target_block_index]
+            block_end   = block_offsets[target_block_index + 1]
+            out_of_block = (global_0 < block_start) | (global_0 >= block_end)
+            if out_of_block.any():
+                raise ValueError(
+                    f"gmsh indices {arr[out_of_block]} do not belong to block "
+                    f"{target_block_index} "
+                    f"(global range [{block_start+1}, {block_end}])."
+                )
+            return (global_0 - block_start).astype(np.intp)
+    
+        # --- Nodes: simply 1-based -> 0-based ------------------------------------
+        node_out = None
+        if node_indices_gmsh is not None:
+            arr = np.atleast_1d(np.asarray(node_indices_gmsh, dtype=np.intp)).ravel()
+            node_out = (arr - 1).astype(np.intp)
+    
+        # --- Elements: global -> per-block local index ---------------------------
+        cell_out   = _global_to_local(cell_indices_gmsh,   self.index_triangle)
+        line_out   = _global_to_local(line_indices_gmsh,   self.index_line)
+        vertex_out = _global_to_local(vertex_indices_gmsh, self.index_vertex)
+    
+        return {
+            "node_indices":   node_out,
+            "cell_indices":   cell_out,
+            "line_indices":   line_out,
+            "vertex_indices": vertex_out,
+        }
+    
+    
+    def _make_new_processor(
+        self,
+        keep_nodes_mask:    np.ndarray,   # bool (num_points,)
+        keep_cells_mask:    np.ndarray,   # bool (num_cells,)
+        keep_lines_mask:    np.ndarray,   # bool (num_lines,)   — pass np.array([], bool) if no lines
+        keep_vertexes_mask: np.ndarray,   # bool (num_vertexes,) — pass np.array([], bool) if no vertexes
+        ) -> "MeshDataProcessor":
+        """
+        Rebuild a MeshDataProcessor from four boolean keep-masks.
+    
+        Steps
+        -----
+        1. Build a node remapping vector  old_id -> new_id  (-1 = deleted).
+        2. Slice points and point_data with keep_nodes_mask.
+        3. Walk self.data.cells in original block order; apply the right mask
+           to each block's connectivity and remap node indices.
+        4. Apply the same per-block masks to every key in self.data.cell_data.
+        5. Copy field_data (physical / geometrical tags, projection, …) verbatim.
+        6. Construct a fresh meshio.Mesh and return MeshDataProcessor(new_mesh).
+    
+        The block order is preserved, so self.index_triangle / index_line /
+        index_vertex remain valid in the returned processor.
+        """
+        # -- 1. Node remapping ----------------------------------------------------
+        node_remap = np.full(self.num_points, -1, dtype=np.intp)
+        node_remap[keep_nodes_mask] = np.arange(keep_nodes_mask.sum(), dtype=np.intp)
+    
+        # -- 2. New points & point_data -------------------------------------------
+        new_points = self.data.points[keep_nodes_mask].copy()
+    
+        new_point_data = {}
+        for k, v in self.data.point_data.items():
+            new_point_data[k] = v[keep_nodes_mask].copy()
+    
+        # -- 3 & 4. Walk blocks in original order ---------------------------------
+        # Build a dict:  block_index -> boolean keep-mask for that block
+        block_masks = {}
+        if self.index_triangle is not None:
+            block_masks[self.index_triangle] = keep_cells_mask
+        if self.index_line is not None and len(keep_lines_mask):
+            block_masks[self.index_line] = keep_lines_mask
+        if self.index_vertex is not None and len(keep_vertexes_mask):
+            block_masks[self.index_vertex] = keep_vertexes_mask
+    
+        new_cells_blocks = []
+        new_cell_data    = {k: [] for k in self.data.cell_data}
+    
+        for i, block in enumerate(self.data.cells):
+            # Determine which rows of this block to keep
+            mask = block_masks.get(i, np.ones(len(block.data), dtype=bool))
+    
+            # Remap connectivity (node ids)
+            kept_conn = block.data[mask]
+            new_conn  = node_remap[kept_conn]
+    
+            # Safety: no reference should point to a deleted node
+            if (new_conn < 0).any():
+                bad_cells = np.where((new_conn < 0).any(axis=1))[0] if new_conn.ndim > 1 \
+                            else np.where(new_conn < 0)[0]
+                raise ValueError(
+                    f"Block '{block.type}' (index {i}): rows {bad_cells} still reference "
+                    f"deleted nodes after masking. Remove those elements first."
+                )
+    
+            new_cells_blocks.append(CellBlock(block.type, new_conn))
+    
+            for k, all_blocks in self.data.cell_data.items():
+                new_cell_data[k].append(all_blocks[i][mask].copy())
+    
+        # -- 5. Carry over field_data (gmsh tags, projection, ...) verbatim ---------
+        field_data = deepcopy(self.data.field_data) if self.data.field_data else {}
+    
+        # -- 6. Build new mesh and wrap it ----------------------------------------
+        new_mesh = Mesh(
+            points     = new_points,
+            cells      = new_cells_blocks,
+            point_data = new_point_data,
+            cell_data  = new_cell_data,
+            field_data = field_data,
+        )
+    
+        return MeshDataProcessor(new_mesh)
+    
+    
+    def remove_elements(
+            self,
+            node_indices:   np.ndarray | list | None = None,
+            cell_indices:   np.ndarray | list | None = None,
+            line_indices:   np.ndarray | list | None = None,
+            vertex_indices: np.ndarray | list | None = None,
+            numbering:      str = "meshio",
+            ) -> "MeshDataProcessor":
+        """
+        Remove elements by index without any floating-element cleanup.
+    
+        When node_indices are provided, any cell, line or vertex that
+        references a deleted node is automatically removed as well
+        (a warning is raised to inform the caller).
+    
+        Parameters
+        ----------
+        numbering : 'meshio' (default) or 'gmsh'
+            'meshio' : 0-based, per-block indices (default)
+            'gmsh'   : 1-based, globally numbered across all blocks
+        """
+        if numbering == "gmsh":
+            idx = self.global_to_meshio(node_indices, cell_indices,
+                                        line_indices, vertex_indices)
+            node_indices   = idx["node_indices"]
+            cell_indices   = idx["cell_indices"]
+            line_indices   = idx["line_indices"]
+            vertex_indices = idx["vertex_indices"]
+        elif numbering != "meshio":
+            raise ValueError("numbering must be 'meshio' or 'gmsh'")
+        
+        def _make_mask(total: int, indices) -> np.ndarray:
+            mask = np.ones(total, dtype=bool)
+            if indices is not None and len(indices):
+                idx = np.atleast_1d(np.asarray(indices, dtype=np.intp)).ravel()
+                mask[idx] = False
+            return mask
+    
+        keep_nodes    = _make_mask(self.num_points,   node_indices)
+        keep_cells    = _make_mask(self.num_cells,     cell_indices)
+        keep_lines    = (_make_mask(self.num_lines,    line_indices)
+                         if self.num_lines    else np.array([], dtype=bool))
+        keep_vertexes = (_make_mask(self.num_vertexes, vertex_indices)
+                         if self.num_vertexes else np.array([], dtype=bool))
+    
+        # --- Cascade: drop elements that reference deleted nodes -----------------
+        if node_indices is not None and len(node_indices):
+            dead_nodes = np.atleast_1d(np.asarray(node_indices, dtype=np.intp)).ravel()
+    
+            connected_cells = np.isin(self.cells, dead_nodes).any(axis=1)
+            if connected_cells.any():
+                p_warning("Some connected cells were removed alongside the deleted nodes")
+                keep_cells &= ~connected_cells
+    
+            if self.num_lines:
+                connected_lines = np.isin(self.lines, dead_nodes).any(axis=1)
+                if connected_lines.any():
+                    p_warning("Some connected lines were removed alongside the deleted nodes")
+                    keep_lines &= ~connected_lines
+    
+            if self.num_vertexes:
+                connected_vertexes = np.isin(self.vertexes.ravel(), dead_nodes)
+                if connected_vertexes.any():
+                    p_warning("Some connected vertexes were removed alongside the deleted nodes")
+                    keep_vertexes &= ~connected_vertexes
+    
+        return self._make_new_processor(keep_nodes, keep_cells, keep_lines, keep_vertexes)
+
+
+    def remove_all_floating(self) -> "MeshDataProcessor":
+        """
+        Removes all floating elements from the mesh in two passes:
+          1. Remove floating cells (disconnected from the main mesh group)
+          2. Remove floating lines, vertexes and nodes left after cell removal
+        """
+        # --- Pass 1: floating cells ---
+        floating_cells = self.check_floating_cells()
+        proc = self.remove_elements(cell_indices=floating_cells) if len(floating_cells) else self
+    
+        # --- Pass 2: floating lines, vertexes, nodes ---
+        floating_nodes    = proc.check_floating_nodes()
+        floating_vertexes = proc.check_floating_vertexes()
+        floating_lines    = proc.check_floating_lines()
+    
+        proc = proc.remove_elements(
+            node_indices   = floating_nodes    if len(floating_nodes)    else None,
+            line_indices   = floating_lines    if len(floating_lines)    else None,
+            vertex_indices = floating_vertexes if len(floating_vertexes) else None,
+        )
+    
+        return proc
+    
+    
+    def remove_elements_clean(
+            self,
+            node_indices:   np.ndarray | list | None = None,
+            cell_indices:   np.ndarray | list | None = None,
+            line_indices:   np.ndarray | list | None = None,
+            vertex_indices: np.ndarray | list | None = None,
+            numbering:      str = "meshio",
+            ) -> "MeshDataProcessor":
+        """
+        Remove elements by index, then clean up all floating elements.
+    
+        Combines remove_elements() and remove_all_floating() in a single call.
+        See remove_elements() for parameter details.
+        """
+        return self.remove_elements(
+            node_indices   = node_indices,
+            cell_indices   = cell_indices,
+            line_indices   = line_indices,
+            vertex_indices = vertex_indices,
+            numbering      = numbering
+            ).remove_all_floating()
+    
+    
+    def add_elements(
+            self,
+            new_nodes:    np.ndarray | None = None,  # (M, 3) coordinates
+            new_cells:    dict       | None = None,
+            new_lines:    dict       | None = None,
+            new_vertexes: dict       | None = None,
+            numbering:    str = "meshio",
+            ) -> "MeshDataProcessor":
+        """
+        Append new nodes and/or elements to the mesh.
+    
+        Parameters
+        ----------
+        new_nodes : array (M, 3)
+            Coordinates of new nodes to append.
+    
+        new_cells / new_lines / new_vertexes : dict, optional
+            Each dict must contain a 'data' key with the connectivity array,
+            plus one key per cell_data field with the corresponding values.
+            Scalar values are broadcast to all new elements; arrays must match
+            the number of new elements exactly. Missing cell_data keys default
+            to 0.
+    
+            Example::
+    
+                new_cells = {
+                    'data':             np.array([[100, 200, 300],
+                                                  [101, 201, 301]]),
+                    'gmsh:physical':    [11, 11],
+                    'gmsh:geometrical': [1,  1 ],
+                }
+                new_lines = {
+                    'data':             np.array([[50, 51]]),
+                    'gmsh:physical':    [1],
+                    'gmsh:geometrical': [29],
+                }
+                
+        numbering : 'meshio' (default) or 'gmsh'
+            'meshio' : 0-based, per-block indices (default)
+            'gmsh'   : 1-based, globally numbered across all blocks
+    
+        Returns
+        -------
+        MeshDataProcessor
+            New processor; the original is untouched.
+        """
+        
+        if numbering not in ("meshio", "gmsh"):
+            raise ValueError("numbering must be 'meshio' or 'gmsh'")
+    
+        # --- Convert node indices inside connectivity arrays ---------------------
+        def _convert_conn(d):
+            """If gmsh numbering, shift 1-based node indices in 'data' to 0-based."""
+            if d is None or numbering == "meshio":
+                return d
+            return {**d, 'data': np.asarray(d['data']) - 1}
+    
+        new_cells    = _convert_conn(new_cells)
+        new_lines    = _convert_conn(new_lines)
+        new_vertexes = _convert_conn(new_vertexes)
+        
+        # --- 0. Validate input dicts ---------------------------------------------
+        def _parse_block(d, label):
+            """Extract connectivity and per-field values from an element dict."""
+            if d is None:
+                return None, {}
+            if 'data' not in d:
+                raise ValueError(f"new_{label} dict must contain a 'data' key.")
+            conn       = np.atleast_2d(np.asarray(d['data']))
+            field_vals = {k: v for k, v in d.items() if k != 'data'}
+            return conn, field_vals
+    
+        cells_conn,    cells_fields    = _parse_block(new_cells,    'cells')
+        lines_conn,    lines_fields    = _parse_block(new_lines,    'lines')
+        vertexes_conn, vertexes_fields = _parse_block(new_vertexes, 'vertexes')
+    
+        additions = {
+            'triangle': (cells_conn,    cells_fields,    self.index_triangle),
+            'line':     (lines_conn,    lines_fields,    self.index_line),
+            'vertex':   (vertexes_conn, vertexes_fields, self.index_vertex),
+        }
+    
+        # --- 1. New points -------------------------------------------------------
+        new_points = (
+            np.vstack([self.data.points, np.atleast_2d(new_nodes)])
+            if new_nodes is not None
+            else self.data.points.copy()
+        )
+    
+        n_new_nodes = len(new_nodes) if new_nodes is not None else 0
+        new_point_data = {}
+        for k, v in self.data.point_data.items():
+            padding = np.zeros((n_new_nodes, *v.shape[1:]), dtype=v.dtype)
+            new_point_data[k] = np.concatenate([v, padding])
+        
+        # --- 1b. Check and fix orientation of new triangular cells ---------------
+        if cells_conn is not None:
+            cells_conn = cells_conn.copy()             # ensure writable
+            pts   = new_points[cells_conn]             # (K, 3, 3)
+            AB    = pts[:, 1, :2] - pts[:, 0, :2]     # (K, 2)
+            AC    = pts[:, 2, :2] - pts[:, 0, :2]     # (K, 2)
+            cross = AB[:, 0] * AC[:, 1] - AB[:, 1] * AC[:, 0]
+            flipped = cross < 0
+            if flipped.any():
+                p_warning("New cell orientation has been corrected")
+                tmp = cells_conn[flipped, 1].copy()
+                cells_conn[flipped, 1] = cells_conn[flipped, 2]
+                cells_conn[flipped, 2] = tmp
+
+            # Refresh additions so the block-walk uses the corrected connectivity
+            additions['triangle'] = (cells_conn, cells_fields, self.index_triangle)
+                    
+        # --- 2. Helper: resolve a single cell_data field for new elements --------
+        def _resolve(field_key, field_vals, n_elements, ref_dtype):
+            if field_key in field_vals:
+                val = field_vals[field_key]
+            else:
+                # Default to the minimum existing value for this field
+                existing_values = [
+                    blk for blk in self.data.cell_data.get(field_key, [])
+                    if blk is not None and len(blk)
+                ]
+                val = int(np.min([v.min() for v in existing_values])) if existing_values else 0
+        
+            arr = np.atleast_1d(np.asarray(val, dtype=ref_dtype))
+            if arr.size == 1:
+                return np.full(n_elements, arr[0], dtype=ref_dtype)
+            if arr.size != n_elements:
+                raise ValueError(
+                    f"'{field_key}' has {arr.size} values "
+                    f"but {n_elements} new elements were provided."
+                )
+            return arr
+    
+        # --- 3. Walk existing blocks, appending where needed ---------------------
+        new_cells_blocks = []
+        new_cell_data    = {k: [] for k in self.data.cell_data}
+    
+        for i, block in enumerate(self.data.cells):
+            # Find if this block receives new elements
+            new_conn, field_vals, n_new = None, {}, 0
+            for btype, (conn, fvals, bidx) in additions.items():
+                if bidx == i and conn is not None:
+                    new_conn    = conn.astype(block.data.dtype)
+                    field_vals  = fvals
+                    n_new       = len(new_conn)
+                    break
+    
+            merged_conn = np.vstack([block.data, new_conn]) if n_new else block.data
+            new_cells_blocks.append(CellBlock(block.type, merged_conn))
+    
+            for k, all_blocks in self.data.cell_data.items():
+                existing   = all_blocks[i]
+                if n_new:
+                    appended = _resolve(k, field_vals, n_new, existing.dtype)
+                    new_cell_data[k].append(np.concatenate([existing, appended]))
+                else:
+                    new_cell_data[k].append(existing.copy())
+    
+        # --- 4. field_data verbatim ----------------------------------------------
+        field_data = deepcopy(self.data.field_data) if self.data.field_data else {}
+    
+        # --- 5. Build and return -------------------------------------------------
+        new_mesh = Mesh(
+            points     = new_points,
+            cells      = new_cells_blocks,
+            point_data = new_point_data,
+            cell_data  = new_cell_data,
+            field_data = field_data,
+        )
+        return MeshDataProcessor(new_mesh)
+    
+    
+    def change_elements(
+            self,
+            element_type: str,
+            indices:      np.ndarray | list | int,
+            numbering:    str = "meshio",
+            **kwargs,
+            ) -> "MeshDataProcessor":
+        """
+        Return a new processor with modified data for a subset of elements.
+    
+        Parameters
+        ----------
+        element_type : str
+            One of 'node', 'vertex', 'line', 'cell'.
+            
+        indices : int or array-like of int
+            Indices of the elements to modify.
+            
+        numbering : 'meshio' (default) or 'gmsh'
+            'meshio' : 0-based, per-block indices (default)
+            'gmsh'   : 1-based, globally numbered across all blocks
+            
+        **kwargs
+            Fields to modify.  The key selects what to change:
+    
+            - 'data'              : new coordinates (nodes) or connectivity
+                                    (vertex/line/cell). Must be an array whose
+                                    first dimension matches len(indices).
+            - 'gmsh:physical'     : new physical tag(s)  — scalar or array
+            - 'gmsh:geometrical'  : new geometrical tag(s) — scalar or array
+            - any other key present in self.data.cell_data
+    
+            Scalar values are broadcast to all selected indices.
+    
+        Returns
+        -------
+        MeshDataProcessor
+            New processor; the original is untouched.
+    
+        Examples
+        --------
+        # Move two nodes
+        proc2 = proc.change_elements('node', [10, 11], 
+                                      data=np.array([[1.0, 2.0, 0.0],
+                                                     [1.5, 2.5, 0.0]]))
+    
+        # Change the physical tag of cells 0 and 5
+        proc2 = proc.change_elements('cell', [0, 5], **{'gmsh:physical': 3})
+    
+        # Change both connectivity and tags of line 7
+        proc2 = proc.change_elements('line', 7, 
+                                      data=np.array([[100, 200]]),
+                                      **{'gmsh:physical': 2, 
+                                         'gmsh:geometrical': 5})
+        """
+        if numbering not in ("meshio", "gmsh"):
+            raise ValueError("numbering must be 'meshio' or 'gmsh'")
+    
+        # --- Convert element selector indices ------------------------------------
+        if numbering == "gmsh":
+            key_map = {'node':   'node_indices',
+                       'cell':   'cell_indices',
+                       'line':   'line_indices',
+                       'vertex': 'vertex_indices'}
+            gmsh_kwarg = {f"{key_map[element_type]}_gmsh": indices}
+            indices = self.global_to_meshio(**gmsh_kwarg)[key_map[element_type]]
+    
+            # --- Convert node indices inside 'data' kwarg (connectivity only) ----
+            # Nodes: 'data' is coordinates -> no conversion
+            # Others: 'data' is a connectivity array of node indices -> 1-based to 0-based
+            if element_type != 'node' and 'data' in kwargs:
+                kwargs = {**kwargs, 'data': np.asarray(kwargs['data']) - 1}
+        
+        indices = np.atleast_1d(np.asarray(indices, dtype=np.intp)).ravel()
+    
+        if element_type not in ('node', 'vertex', 'line', 'cell'):
+            raise ValueError("element_type must be 'node', 'vertex', 'line' or 'cell'")
+    
+        # --- Validate kwargs keys ------------------------------------------------
+        valid_keys = {'data'} | set(self.data.cell_data.keys())
+        unknown = set(kwargs) - valid_keys
+        if unknown:
+            raise ValueError(f"Unknown field(s): {unknown}. "
+                             f"Valid fields are: {valid_keys}")
+    
+        if element_type == 'node' and set(kwargs.keys()) - {'data'}:
+            raise ValueError("Only 'data' (coordinates) can be changed for nodes.")
+    
+        # --- Helper: broadcast scalar or validate array length -------------------
+        def _resolve(val, n, dtype):
+            arr = np.atleast_1d(np.asarray(val, dtype=dtype))
+            if arr.shape[0] == 1:
+                return np.repeat(arr, n, axis=0)
+            if arr.shape[0] != n:
+                raise ValueError(f"Expected {n} values, got {arr.shape[0]}.")
+            return arr
+    
+        n = len(indices)
+    
+        # NODES
+        if element_type == 'node':
+            new_points = self.data.points.copy()
+            if 'data' in kwargs:
+                new_coords = _resolve(kwargs['data'], n, self.data.points.dtype)
+                new_points[indices] = new_coords
+    
+            new_point_data = {k: v.copy() for k, v in self.data.point_data.items()}
+    
+            new_mesh = Mesh(
+                points     = new_points,
+                cells      = deepcopy(self.data.cells),
+                point_data = new_point_data,
+                cell_data  = deepcopy(self.data.cell_data),
+                field_data = deepcopy(self.data.field_data) if self.data.field_data else {},
+            )
+            return MeshDataProcessor(new_mesh)
+    
+        # ELEMENT TYPES (vertex / line / cell)
+        block_index = {
+            'vertex': self.index_vertex,
+            'line':   self.index_line,
+            'cell':   self.index_triangle,
+        }[element_type]
+    
+        if block_index is None:
+            raise ValueError(f"No '{element_type}' block found in this mesh.")
+        
+        # --- Check and fix orientation when changing cell connectivity -----------
+        if element_type == 'cell' and 'data' in kwargs:
+            new_conn_data = _resolve(kwargs['data'], n, 
+                                     self.data.cells[self.index_triangle].data.dtype)
+            new_conn_data = new_conn_data.copy()       # ensure writable
+            pts   = self.data.points[new_conn_data]    # (K, 3, 3)
+            AB    = pts[:, 1, :2] - pts[:, 0, :2]     # (K, 2)
+            AC    = pts[:, 2, :2] - pts[:, 0, :2]     # (K, 2)
+            cross = AB[:, 0] * AC[:, 1] - AB[:, 1] * AC[:, 0]
+            flipped = cross < 0
+            if flipped.any():
+                p_warning("New cell orientation has been corrected")
+                tmp = new_conn_data[flipped, 1].copy()
+                new_conn_data[flipped, 1] = new_conn_data[flipped, 2]
+                new_conn_data[flipped, 2] = tmp
+            kwargs = {**kwargs, 'data': new_conn_data}
+        
+        # --- Rebuild cell blocks -------------------------------------------------
+        new_cells_blocks = []
+        new_cell_data    = {k: [] for k in self.data.cell_data}
+    
+        for i, block in enumerate(self.data.cells):
+            new_conn = block.data.copy()
+    
+            if i == block_index and 'data' in kwargs:
+                new_conn[indices] = _resolve(kwargs['data'], n, block.data.dtype)
+    
+            new_cells_blocks.append(CellBlock(block.type, new_conn))
+    
+            for k, all_blocks in self.data.cell_data.items():
+                new_blk = all_blocks[i].copy()
+                if i == block_index and k in kwargs:
+                    new_blk[indices] = _resolve(kwargs[k], n, all_blocks[i].dtype)
+                new_cell_data[k].append(new_blk)
+    
+        new_mesh = Mesh(
+            points     = self.data.points.copy(),
+            cells      = new_cells_blocks,
+            point_data = {k: v.copy() for k, v in self.data.point_data.items()},
+            cell_data  = new_cell_data,
+            field_data = deepcopy(self.data.field_data) if self.data.field_data else {},
+        )
+        return MeshDataProcessor(new_mesh)
+    
+    
+    def swap_orientation(self,
+                         cell_ids:  np.ndarray,
+                         numbering: str = "meshio") -> "MeshDataProcessor":
+        """
+        Returns a new MeshDataProcessor where the triangular cells in cell_ids
+        have swapped orientation (swap of first two nodes).
+        """
+        if numbering not in ("meshio", "gmsh"):
+            raise ValueError("numbering must be 'meshio' or 'gmsh'")
+    
+        if numbering == "gmsh":
+            new_indexes_dict = self.global_to_meshio(cell_indices_gmsh=cell_ids)
+            new_cell_ids = new_indexes_dict['cell_indices'].astype(int)
+            cell_ids = new_cell_ids.reshape(cell_ids.shape)
+    
+        cell_ids = np.atleast_1d(np.asarray(cell_ids, dtype=np.intp)).ravel()
+    
+        # Step 1: select current connectivity
+        current = self.cells[cell_ids].copy()          # (K, 3)
+    
+        # Step 2: swap node_0 and node_1
+        swapped = current.copy()
+        swapped[:, 0] = current[:, 1]
+        swapped[:, 1] = current[:, 0]
+    
+        return self.change_elements('cell', cell_ids, data=swapped)
+    
+    
+    def swap_edges_cells(self,
+                         cell_ids:  np.ndarray,
+                         numbering: str = "meshio") -> "MeshDataProcessor":
+        """
+        Returns a new MeshDataProcessor where each pair of triangular cells in
+        cell_ids have swapped their common edge.
+    
+        cell_ids must be of shape (P, 2): each row is a pair of adjacent cells.
+        For each pair [a,b,c] + [d,c,b], the result is [a,b,d] + [d,c,a].
+        """
+        cell_ids = np.atleast_2d(np.asarray(cell_ids))
+    
+        if numbering not in ("meshio", "gmsh"):
+            raise ValueError("numbering must be 'meshio' or 'gmsh'")
+    
+        if numbering == "gmsh":
+            flat = cell_ids.ravel()
+            new_indexes_dict = self.global_to_meshio(cell_indices_gmsh=flat)
+            cell_ids = new_indexes_dict['cell_indices'].astype(int).reshape(cell_ids.shape)
+    
+        # Step 1: check for duplicates
+        flat_ids = cell_ids.ravel()
+        unique_ids, counts = np.unique(flat_ids, return_counts=True)
+        if (counts > 1).any():
+            p_warning(f"Duplicate cell ids detected in swap_edges_cells: "
+                      f"{unique_ids[counts > 1]}. These pairs will be skipped.")
+            # filter out pairs containing duplicated ids
+            dup_ids = set(unique_ids[counts > 1])
+            mask = ~np.array([i in dup_ids or j in dup_ids
+                              for i, j in cell_ids])
+            cell_ids = cell_ids[mask]
+    
+        if not len(cell_ids):
+            return self
+    
+        id0 = cell_ids[:, 0]                           # (P,)
+        id1 = cell_ids[:, 1]                           # (P,)
+        tri0 = self.cells[id0]                         # (P, 3)
+        tri1 = self.cells[id1]                         # (P, 3)
+    
+        # Step 2: find the 2 common nodes and the 2 opposite nodes
+        # For each pair, common nodes are those appearing in both triangles
+        new_tri0 = np.empty_like(tri0)
+        new_tri1 = np.empty_like(tri1)
+        valid = np.ones(len(cell_ids), dtype=bool)
+    
+        for k, (t0, t1) in enumerate(zip(tri0, tri1)):
+            common   = np.intersect1d(t0, t1)
+            if len(common) != 2:
+                p_warning(f"Cell pair ({id0[k]}, {id1[k]}) does not share exactly 2 nodes — skipping.")
+                valid[k] = False
+                continue
+            opp0 = t0[~np.isin(t0, common)][0]        # node in tri0 not in tri1
+            opp1 = t1[~np.isin(t1, common)][0]        # node in tri1 not in tri0
+    
+            # New triangles share the new edge (opp0, opp1) instead
+            new_tri0[k] = [opp0, common[0], opp1]
+            new_tri1[k] = [opp1, common[1], opp0]
+    
+        if not valid.all():
+            id0, id1 = id0[valid], id1[valid]
+            new_tri0, new_tri1 = new_tri0[valid], new_tri1[valid]
+    
+        if not len(id0):
+            return self
+        
+        # Step 3: remove the old common edge from lines if it exists
+        if self.num_lines and valid.any():
+            lines_to_remove = []
+            lines_sorted = np.sort(self.lines, axis=1)          # (L, 2)
+    
+            for k in np.where(valid)[0]:
+                t0, t1  = tri0[k], tri1[k]
+                common  = np.intersect1d(t0, t1)                # the swapped edge
+                edge    = np.sort(common)                        # (2,)
+                match   = np.where((lines_sorted[:, 0] == edge[0]) &
+                                    (lines_sorted[:, 1] == edge[1]))[0]
+                if len(match):
+                    lines_to_remove.append(match[0])
+                    p_warning(f"Removed common edge {common} from lines")
+    
+            if lines_to_remove:
+                lines_to_remove = np.unique(lines_to_remove)
+                # Apply connectivity change and line removal in one shot
+                all_ids  = np.concatenate([id0,     id1])
+                all_data = np.vstack(    [new_tri0, new_tri1])
+                return (self
+                        .change_elements('cell', all_ids, data=all_data)
+                        .remove_elements(line_indices=lines_to_remove))
+    
+        # Step 4: no lines to remove, apply connectivity change only
+        all_ids  = np.concatenate([id0, id1])
+        all_data = np.vstack([new_tri0, new_tri1])
+    
+        return self.change_elements('cell', all_ids, data=all_data)
+        
+    
+    def merge_nodes(self,
+                    node_ids:  np.ndarray,
+                    numbering: str = "meshio") -> "MeshDataProcessor":
+        """
+        Returns a new MeshDataProcessor where node_ids[:, 0] has been replaced
+        by node_ids[:, 1] everywhere in the connectivity.
+    
+        After remapping, only degenerate and duplicate elements that are
+        *local* to the merged nodes are removed.
+        """
+        node_ids = np.atleast_2d(np.asarray(node_ids))
+    
+        if numbering not in ("meshio", "gmsh"):
+            raise ValueError("numbering must be 'meshio' or 'gmsh'")
+    
+        if numbering == "gmsh":
+            flat = node_ids.ravel()
+            new_indexes_dict = self.global_to_meshio(node_indices_gmsh=flat)
+            node_ids = new_indexes_dict['node_indices'].astype(int).reshape(node_ids.shape)
+    
+        # Drop identity pairs
+        pairs_mask           = node_ids[:, 0] != node_ids[:, 1]
+        node_indices_to_drop = node_ids[pairs_mask, 0]
+        node_indices_to_keep = node_ids[pairs_mask, 1]
+    
+        if not len(node_indices_to_drop):
+            return self
+    
+        # ------------------------------------------------------------------ #
+        #  Helper: gather element indices connected to a set of node indices #
+        # ------------------------------------------------------------------ #
+        def _local_elements(mapping, node_indices):
+            """
+            Given a node to element mapping (rows = nodes, cols = element 
+            indices or NaN) return the unique element indices reachable from 
+            node_indices.
+            """
+            if mapping.size == 0:
+                return np.array([], dtype=int)
+            rows = mapping[node_indices].ravel()
+            return np.unique(rows[~np.isnan(rows)]).astype(int)
+    
+        # Step 1: remap connectivity in all element types
+        def _remap(conn):
+            conn = conn.copy()
+            for drop, keep in zip(node_indices_to_drop, node_indices_to_keep):
+                conn[conn == drop] = keep
+            return conn
+    
+        new_cells_data    = _remap(self.cells)
+        new_lines_data    = _remap(self.lines)    if self.num_lines    else None
+        new_vertexes_data = _remap(self.vertexes) if self.num_vertexes else None
+    
+        # Step 2: apply remapped connectivity
+        proc = self.change_elements('cell', np.arange(self.num_cells),
+                                    data=new_cells_data)
+        if self.num_lines:
+            proc = proc.change_elements('line', np.arange(self.num_lines),
+                                        data=new_lines_data)
+        if self.num_vertexes:
+            proc = proc.change_elements('vertex', np.arange(self.num_vertexes),
+                                        data=new_vertexes_data)
+    
+        # Step 3: collect elements *local* to the affected nodes
+        #         (both the dropped and kept sides can now host bad elements)
+        affected_nodes = np.unique(np.concatenate([node_indices_to_drop,
+                                                   node_indices_to_keep]))
+    
+        local_cells    = _local_elements(proc.compute_node_to_cell(),   affected_nodes)
+        local_lines    = _local_elements(proc.compute_node_to_line(),   affected_nodes)
+        local_vertexes = _local_elements(proc.compute_node_to_vertex(), affected_nodes)
+    
+        # Step 4: intersect global degenerate/duplicate results with local sets
+        degen_cells  = proc.check_degenerate_local(local_cells,    'triangle')
+        degen_lines  = proc.check_degenerate_local(local_lines,    'line')     if self.num_lines    else np.array([], dtype=int)
+        # dup_cells    = proc.check_duplicates_local(local_cells,    'triangle')
+        dup_lines    = proc.check_duplicates_local(local_lines,    'line')     if self.num_lines    else np.array([], dtype=int)
+        dup_vertexes = proc.check_duplicates_local(local_vertexes, 'vertex')   if self.num_vertexes else np.array([], dtype=int)
+    
+        # bad_cells    = np.unique(np.concatenate([degen_cells,  dup_cells]))
+        bad_cells    = degen_cells
+        bad_lines    = np.unique(np.concatenate([degen_lines,  dup_lines]))
+        bad_vertexes = dup_vertexes
+    
+        if len(bad_cells):
+            p_warning(f"Degenerate cells removed after node merge: {len(bad_cells)}")
+        if len(bad_lines):
+            p_warning(f"Degenerate or duplicate lines removed after node merge: {len(bad_lines)}")
+        if len(bad_vertexes):
+            p_warning(f"Duplicate vertexes removed after node merge: {len(bad_vertexes)}")
+    
+        proc = proc.remove_elements(
+            cell_indices   = bad_cells    if len(bad_cells)    else None,
+            line_indices   = bad_lines    if len(bad_lines)    else None,
+            vertex_indices = bad_vertexes if len(bad_vertexes) else None,
+        )
+    
+        # Step 5: check for lines that became interior after the merge
+        #         (again, restrict to lines local to the affected nodes)
+        local_lines_after = _local_elements(proc.compute_node_to_line(), affected_nodes)
+        interior_lines    = np.intersect1d(proc.check_lines_not_boundary(), local_lines_after)
+        if len(interior_lines):
+            p_warning(f"{len(interior_lines)} lines became interior after node "
+                      f"merge and were removed.")
+            proc = proc.remove_elements(line_indices=interior_lines)
+    
+        # Step 6: remove the now-unused merged-away nodes
+        proc = proc.remove_elements(node_indices=node_indices_to_drop)
+    
+        return proc
+
+# =============================================================================
+#     SAVING THE MESH IN VARIOUS .msh FORMATS
+# =============================================================================
+    
+
     def save_mesh(self, 
                   path: str = './', 
                   filename: str = 'toto.msh',
@@ -1294,7 +2908,7 @@ class MeshDataProcessor(DataProcessor):
         filepath = os.path.join(path, filename)
         
         if 'gmsh:dim_tags' not in self.data.point_data.keys():
-            self.data.point_data['gmsh:dim_tags'] = [len(self.data.points)*[0]]
+            self.data.point_data['gmsh:dim_tags'] = np.array(len(self.data.points)*[0])
             
         if file_format == "tolosa":
             self.data.write(filepath, 
@@ -1331,7 +2945,6 @@ class MeshDataProcessor(DataProcessor):
                             float_fmt=float_fmt)
             
         if file_format in ["gmsh", "tolosa"] and not binary:
-            print('ici')
             projection_wkt = None
             if 'field_data' in self.data.__dict__.keys():
                 if 'projection_wkt' in self.data.field_data.keys():
@@ -1342,189 +2955,11 @@ class MeshDataProcessor(DataProcessor):
                             f.write("WKT\n")
                             f.write(projection_wkt.strip() + "\n")
                             f.write("$EndProjection\n")
-        
-    # def compute_edge_to_segment(self):
-    #     edge_to_cell = self.compute_edge_to_cell()
-    #     cell_centers_array = self.cell_centers_array
-    #     edge_centers_array = self.points_array[self.compute_edge_to_node()].mean(axis=1)
-        
-    #     flat_edge_to_cell = edge_to_cell.ravel()
-    #     flat_edge_to_cell_mapping = np.repeat(np.arange(len(edge_to_cell)), 2)
-        
-    #     resu = np.array(len(edge_to_cell), 2, 3)
-    #     resu[:, , 3] = 
     
-    # def compute_node_to_segments(self):
-    #     nodes = self.points_array
-    #     node_to_edge = self.compute_node_to_edge()
-    #     edge_to_segment = self.compute_edge_to_segment()
-        
     
-    # def compute_node_to_adjacent_boundary_lines_mapping(self):
-    #     boundary_nodes = np.unique(self.lines.flatten())
-    #     node_lines = {N: [] for N in boundary_nodes}
 
-    #     for line_id, (N0, N1) in enumerate(self.lines):
-    #         node_lines[N0].append(line_id)
-    #         node_lines[N1].append(line_id)
-    #     return node_lines
-    
-    # def compute_cell_to_cell_mapping(self):
-    #     num_cells = self.cells.shape[0]
-    
-    #     # 1) Extract edges (3 per triangle)
-    #     edges = np.vstack([
-    #         self.cells[:, [0, 1]],
-    #         self.cells[:, [1, 2]],
-    #         self.cells[:, [2, 0]],
-    #     ])
-    
-    #     # Normalize edges so (i, j) == (j, i)
-    #     edges = np.sort(edges, axis=1)
-    
-    #     # Track which cell each edge came from
-    #     cell_ids = np.repeat(np.arange(num_cells), 3)
-    
-    #     # 2) Group edges
-    #     edge_to_cells = defaultdict(list)
-    #     for edge, cid in zip(edges, cell_ids):
-    #         edge_to_cells[tuple(edge)].append(cid)
-    
-    #     # 3) Build adjacency
-    #     neighbors = [set() for _ in range(num_cells)]
-    
-    #     for cell_list in edge_to_cells.values():
-    #         if len(cell_list) == 2:
-    #             c0, c1 = cell_list
-    #             neighbors[c0].add(c1)
-    #             neighbors[c1].add(c0)
-    #         # len == 1 to boundary edge
-    #         # len > 2 to non-manifold (ignored or handle separately)
-    
-    #     # Convert sets to arrays
-    #     return [np.array(sorted(n), dtype=np.int32) for n in neighbors]
-    
-    def _extract_boundary_edges(self) -> list:
-        """
-        Extract boundary edges.
-        
-        For 2D meshes, boundary edges are those that belong to only one cell.
-        
-        Returns:
-            list: List of boundary edge node pairs (as tuples)
-        """
-        boundary_edges = []
-        
-        # For triangular meshes, we can detect boundary edges
-        if self.cell_type == 'all_Triangle':
-            # Build edge dictionary
-            edge_count = {}
-            
-            for cell in self.cells:
-                # For triangles, get the three edges
-                edges = [
-                    tuple(sorted([cell[0], cell[1]])),
-                    tuple(sorted([cell[1], cell[2]])),
-                    tuple(sorted([cell[2], cell[0]]))
-                ]
-                
-                for edge in edges:
-                    edge_count[edge] = edge_count.get(edge, 0) + 1
-            
-            # Boundary edges appear only once
-            boundary_edges = [edge for edge, count in edge_count.items() if count == 1]
-        
-        return boundary_edges
-    
-    def _extract_edgepoints(self) -> typing.Tuple[np.ndarray, int]:
-        """
-        Extract unique boundary point coordinates.
-        
-        Returns:
-            Tuple of (edgepoints_array, num_edgepoints)
-        """
-        # Extract unique boundary point indices
-        boundary_indices = set()
-        for edge in self.boundary_edges:
-            boundary_indices.update(edge)
-            
-        boundary_indices = np.array(sorted(boundary_indices))
-        
-        if len(boundary_indices) > 0:
-            edgepoints_array = self.points_array[boundary_indices]
-        else:
-            edgepoints_array = np.array([])
-        
-        return edgepoints_array, len(edgepoints_array)
-    
-    def _create_boundary_polygon_list(self) -> list:
-        """
-        Create list of boundary polygons from boundary edges.
-        
-        Returns:
-            list: List of Shapely Polygon objects
-        """
-        if not self.boundary_edges:
-            return []
-        
-        # Convert boundary edges to LineString objects
-        list_coords_boundary_edges = []
-        for edge in self.boundary_edges:
-            coords = self.points_array[list(edge)]
-            list_coords_boundary_edges.append(coords)
-        
-        list_LineString = [LineString(coords) for coords in list_coords_boundary_edges]
-        
-        # Use polygonize to create polygons from line segments
-        boundary_polygon_list = [geom for geom in polygonize(list_LineString).geoms]
-        
-        return boundary_polygon_list
-    
-    def _create_boundary_polygon(self) -> Polygon:
-        """
-        Create a single boundary polygon with holes.
-        
-        The largest polygon by area is used as the shell, and smaller polygons as holes.
-        
-        Returns:
-            Polygon: Shapely Polygon object
-        """
-        boundary_polygon_list = self.boundary_polygon_list
-        
-        if not boundary_polygon_list:
-            # Return empty polygon if no boundaries
-            return Polygon()
-        
-        if len(boundary_polygon_list) == 1:
-            return boundary_polygon_list[0]
-        
-        # Find the polygon with largest area (outer boundary)
-        all_polygons_area = [geom.area for geom in boundary_polygon_list]
-        max_area_idx = all_polygons_area.index(max(all_polygons_area))
-        biggest_polygon = boundary_polygon_list[max_area_idx]
-        
-        # All other polygons are holes
-        other_polygons = [boundary_polygon_list[i] 
-                         for i in range(len(boundary_polygon_list)) 
-                         if i != max_area_idx]
-        
-        # Create polygon with shell and holes
-        boundary_polygon = Polygon(shell=biggest_polygon.exterior.coords, 
-                                  holes=[p.exterior.coords for p in other_polygons])
-        
-        return boundary_polygon
-    
-    def compute_node_domain(self):
-        node_lines = self.compute_node_to_adjacent_boundary_lines_mapping()
-        node_cells = self.compute_node_to_cell_mapping()
-        
-        coordinate_list = [np.array([]) for _ in range(self.num_points)]
-        for N in range(self.num_points):
-            coordinate_list[N] = self.cell_centers_array[node_cells[N]]
-            if N in node_lines.keys():
-                coordinate_list[N] = np.concatenate((coordinate_list[N], self.line_centers_array[node_lines[N]]))
-        polygon_list = [Polygon(l).convex_hull for l in coordinate_list] # ICI C'est FAUX aux frontières concaves mais l'alternative est horrible.
-        return polygon_list
+
+
 
 
 # =============================================================================
