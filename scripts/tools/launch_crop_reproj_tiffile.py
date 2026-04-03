@@ -58,7 +58,7 @@ def extract_suffix(shapefile_name):
     return name.replace("Zone_Delim_", "") if name.startswith("Zone_Delim_") else name
 
 def parse_args():
-    parser = argparse.ArgumentParser(description="Découpe un raster sur polygone, puis reprojette avec bilinéaire.")
+    parser = argparse.ArgumentParser(description="Découpe un raster sur un polygone, puis reprojette avec bilinéaire.")
     parser.add_argument("-r", "--raster", required=True, type=Path, help="Fichier raster d’entrée (.tif)")
     parser.add_argument("-s", "--shapefile", required=True, type=Path, help="Shapefile polygonal de découpe")
     return parser.parse_args()

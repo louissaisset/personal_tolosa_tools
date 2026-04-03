@@ -17,18 +17,20 @@ usage() {
     echo "Options:"
     echo "  -f <path>      Path to forcing file(s) - can be a single file, a folder, wildcards pattern, or a list of files (comma-separated) (default: ~/DATA/CONFIG_DATA/fes2022b_elevations_34_tidal_constituents/)"
     echo "  -m <path>      Path to mesh file (.msh) - if not provided, will use first .msh file in working directory"
+    echo "  -p <path>      Path to the global_tide folder (default: ~/SAVE/SOFT/config_preptool/global_tide/)"
     echo "  -o <path>      Output directory for processed files (default: current directory)"
     echo "  -h             Display this help message"
     exit 1
 }
 
 # Parse command line arguments
-while getopts "f:m:o:h" opt; do
+while getopts "f:m:p:o:h" opt; do
     case $opt in
         f) FORCING_PATH="$OPTARG" ;;
         m) MESH_FILE="$OPTARG" ;;
+	p) INTERP_TIDE_PATH="$OPTARG" ;;
         o) OUTPUT_PATH="$OPTARG" ;;
-        h) usage ;;
+	h) usage ;;
         *) usage ;;
     esac
 done
@@ -71,7 +73,7 @@ echo "Creating symbolic link to mesh file..."
 ln -sf "$MESH_FILE" "${INTERP_TIDE_PATH}/input.msh"
 
 echo "The following boundaries have been detected for tidal forcing:"
-cat *_new.msh | grep '\"IN\"'
+cat $MESH_FILE | grep '\"IN\"'
 
 # Process forcing files
 process_forcing_file() {

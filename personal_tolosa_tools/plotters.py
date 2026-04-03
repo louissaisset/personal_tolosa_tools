@@ -609,7 +609,7 @@ class Plotter:
         # Plot SSH   
         if self.pcolor_key:
             ssh_plot = ax.tripcolor(tripcolor_tri, 
-                                    cell_data[self.pcolor_key],
+                                    cell_data[self.pcolor_key].squeeze(),
                                     vmin=self.pcolor_min, 
                                     vmax=self.pcolor_max,
                                     cmap=self.pcolor_cmap,  
@@ -629,7 +629,7 @@ class Plotter:
         # Plot tricontour
         if self.contour_key:
             bathy_plot = ax.tricontour(tricontour_tri, 
-                                       cell_data[self.contour_key],
+                                       cell_data[self.contour_key].squeeze(),
                                        levels=self.contour_levels, 
                                        linestyles=self.dash_patterns(),
                                        linewidths=self.contour_linewidths, 
@@ -643,10 +643,10 @@ class Plotter:
         if self.scatter_c_key:
             if self.scatter_from_points == True:
                 x, y = points_array[:, 0], points_array[:, 1]
-                data = point_data
+                data = point_data.squeeze()
             else :
                 x, y = cell_centers_array[:, 0], cell_centers_array[:, 1]
-                data = cell_data
+                data = cell_data.squeeze()
             ax.scatter(x, y, 
                        c=data[self.scatter_c_key],
                        s=self.scatter_s,
@@ -663,8 +663,8 @@ class Plotter:
                                               replace=False)
             current_plot = ax.quiver(cell_centers_array[:,0][random_indices],
                                      cell_centers_array[:,1][random_indices],
-                                     cell_data[self.quiver_u_key][random_indices],
-                                     cell_data[self.quiver_v_key][random_indices],
+                                     cell_data[self.quiver_u_key].squeeze()[random_indices],
+                                     cell_data[self.quiver_v_key].squeeze()[random_indices],
                                      scale=self.quiver_scale, 
                                      scale_units='width', 
                                      clip_on=True,

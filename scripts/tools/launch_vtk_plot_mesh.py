@@ -120,14 +120,14 @@ def main():
         
         # Processdata
         processor = ptt.BinDataProcessor(data, mesh, variables)
-        
         # processor.cell_data['radiusratio'] = processor.compute_radiusratio()
         
     elif len(vtk_diag_files) > 0:
         data = file_rdr.read_file(current_path, vtk_diag_files[0])
         # Processdata
-        processor = ptt.VTKDataProcessor(data)
-        processor.cell_data['radiusratio'] = processor.compute_radiusratio()
+        processor = ptt.MeshDataProcessor(data)
+        # processor = ptt.VTKDataProcessor(data)
+        # processor.cell_data['radiusratio'] = processor.compute_radiusratio()
     else:
         sys.exit()
     
@@ -157,9 +157,7 @@ def main():
                          'mesh_zoom_pointepenhir',
                          'mesh_zoom_bassinest']
     
-    
-    
-    
+
     plotter.figure_filename = 'mesh_complet'
     plotter.triplot = True
     ptt.p_ok("Defined the plotter arguments:")
@@ -236,34 +234,34 @@ def main():
         
         
         
-    plotter.figure_filename = 'radiusratio_complet'
-    plotter.figure_size = (7,7)
-    plotter.triplot = False
-    plotter.pcolor_key = 'radiusratio'
-    plotter.pcolor_min = 0
-    plotter.pcolor_max = 2
-    plotter.pcolor_units = ''
-    plotter.pcolor_cmap = 'Reds'
-    plotter.pcolor_min = 1
-    plotter.pcolor_max = 2.5
+    # plotter.figure_filename = 'radiusratio_complet'
+    # plotter.figure_size = (7,7)
+    # plotter.triplot = False
+    # plotter.pcolor_key = 'radiusratio'
+    # plotter.pcolor_min = 0
+    # plotter.pcolor_max = 2
+    # plotter.pcolor_units = ''
+    # plotter.pcolor_cmap = 'Reds'
+    # plotter.pcolor_min = 1
+    # plotter.pcolor_max = 2.5
     
-    plotter.Plot(processor)
+    # plotter.Plot(processor)
     
-    new_figsize_list = [(4,4),
-                        (3.5,3.5),
-                        (3,3),
-                        (3.5,3.5)]
-    new_filename_list = ['radiusratio_zoom_ilelongue',
-                         'radiusratio_zoom_port',
-                         'radiusratio_zoom_pointepenhir',
-                         'radiusratio_zoom_bassinest']
+    # new_figsize_list = [(4,4),
+    #                     (3.5,3.5),
+    #                     (3,3),
+    #                     (3.5,3.5)]
+    # new_filename_list = ['radiusratio_zoom_ilelongue',
+    #                      'radiusratio_zoom_port',
+    #                      'radiusratio_zoom_pointepenhir',
+    #                      'radiusratio_zoom_bassinest']
     
-    for newplotter, new_filename, new_figsize in zip(plotter.zoomed_plotters, new_filename_list, new_figsize_list):
-        newplotter.figure_filename = new_filename
-        newplotter.figure_size = new_figsize
-        ptt.p_ok("Defined the plotter arguments:")
-        print(newplotter.__dict__)
-        newplotter.Plot(processor)
+    # for newplotter, new_filename, new_figsize in zip(plotter.zoomed_plotters, new_filename_list, new_figsize_list):
+    #     newplotter.figure_filename = new_filename
+    #     newplotter.figure_size = new_figsize
+    #     ptt.p_ok("Defined the plotter arguments:")
+    #     print(newplotter.__dict__)
+    #     newplotter.Plot(processor)
     
 if __name__ == "__main__":
     # exit(main())

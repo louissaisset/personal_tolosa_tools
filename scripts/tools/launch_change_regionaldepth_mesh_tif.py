@@ -43,7 +43,13 @@ def create_parser():
         required=True,
         help='Path to the new depth TIF file'
     )
-    
+    parser.add_argument(
+        '--physical_list',
+        type=str,
+        nargs='+',
+        default=[],
+        help='List of physical tags (at least one required). Example: --physical_list tag1 tag2 tag3'
+    )
     parser.add_argument(
         '--workdir', '-w',
         type=str,
@@ -99,7 +105,69 @@ def write_depth_ele_a(newfile, bath_cell):
     fa.write(bath_cell_bigendian)
     fa.close()
 
-def assign_depth_to_points_optimized(latlon, depth_file, polygons_file):
+def assign_depth_to_points_optimized(latlon, 
+                                     depth_file, 
+                                     polygons_file, 
+                                     physical_list=[]):
+
+    polygons_gdf = gpd.read_file(polygons_file)
+
+    # Note: Point(lon, lat) — GeoDataFrame expects (x, y) = (lon, lat)
+    points_gdf = gpd.GeoDataFrame(
+        {'point_idx': range(len(latlon))},
+        geometry=[Point(lat, lon) for lat, lon in latlon],
+        crs='EPSG:4326'
+    )
+
+    with rasterio.open(depth_file) as depth_raster:
+        depth_crs = depth_raster.crs
+        
+        if polygons_gdf.crs != depth_crs:
+            polygons_gdf = polygons_gdf.to_crs(depth_crs)
+        if points_gdf.crs != depth_crs:
+            points_gdf = points_gdf.to_crs(depth_crs)
+        
+        # Select only tagged elements
+        if physical_list:
+            polygons_gdf = polygons_gdf[polygons_gdf['physical'].isin(physical_list)].reset_index(drop=True)
+        
+        # Need polygons to select "points within"
+        if not all(polygons_gdf.geom_type.unique() =='Polygon'):
+            polygons_gdf['geometry'] = polygons_gdf.polygonize()
+        depths = np.full(len(latlon), np.nan)
+
+        # Vectorized spatial join - replaces the entire per-point loop
+        points_in_polygons = gpd.sjoin(
+            points_gdf, polygons_gdf, how='inner', predicate='within'
+        )
+
+        if points_in_polygons.empty:
+            return depths
+
+        # Deduplicate: a point may fall in multiple polygons
+        points_in_polygons = points_in_polygons.drop_duplicates(subset='point_idx')
+
+        # Single batched rasterio.sample() call for all matching points
+        coords = [
+            (geom.x, geom.y)
+            for geom in points_in_polygons.geometry
+        ]
+        sampled = np.array(list(depth_raster.sample(coords)))  # shape: (N, bands)
+
+        depth_vals = sampled[:, 0].astype(float)
+
+        # Mask nodata values
+        if depth_raster.nodata is not None:
+            depth_vals[depth_vals == depth_raster.nodata] = np.nan
+
+        # Write back using original indices
+        original_indices = points_in_polygons['point_idx'].values
+        depths[original_indices] = depth_vals
+
+    return depths
+
+
+def assign_depth_to_points_optimized_OLD(latlon, depth_file, polygons_file):
     """
     Optimized version using rasterio.sample for depth extraction.
     """
@@ -130,6 +198,7 @@ def assign_depth_to_points_optimized(latlon, depth_file, polygons_file):
         # Create spatial index for polygons for faster lookup
         polygons_sindex = polygons_gdf.sindex
         
+        
         # For each point, check if it's in any polygon
         for point_idx, point in points_gdf.iterrows():
             
@@ -148,7 +217,7 @@ def assign_depth_to_points_optimized(latlon, depth_file, polygons_file):
                 
                 if depth_values and depth_values[0][0] != depth_raster.nodata:
                     depths[point_idx] = depth_values[0][0]
-        
+
         return depths
 
 def checkfile(file):
@@ -222,12 +291,15 @@ def main():
     
     # Read cell centers
     latlon = read_grid_ele_a(file_grid_ele_a, file_grid_ele_b).T
-    
+
     # Read initial cell depth
     depths = read_depth_ele_a(file_depth_ele_a, file_depth_ele_b)
     
     # Compute the new sampled depths for the cells inside the infrastructures
-    new_depth_struct = assign_depth_to_points_optimized(latlon, file_newdepth_tif, file_structzones_shp)
+    new_depth_struct = assign_depth_to_points_optimized(latlon, 
+                                                        file_newdepth_tif, 
+                                                        file_structzones_shp,
+                                                        args.physical_list)
     
     # Assemble the depth values
     new_depth = copy.copy(depths)
@@ -241,17 +313,6 @@ if __name__ == "__main__":
     # exit(main())
     main()
     
-    # import matplotlib.pyplot as plt
-
-    # # Original bathy from meshtool
-    # fig, ax = plt.subplots(1,1, dpi=300)
-    # scb = ax.scatter(latlon[:,0], 
-    #                  latlon[:, 1], 
-    #                  c=depths, 
-    #                  s=3, vmin=-30, vmax=30, cmap='RdBu')
-    # ax.set_aspect(1)
-    # fig.colorbar(scb)
-    # plt.show()
     
     
     

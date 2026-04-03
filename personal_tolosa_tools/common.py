@@ -13,17 +13,17 @@ def p_colorize(text, color_code):
     """Adds color to terminal output"""
     return f"\033[{color_code}m{text}\033[0m"
 
-def p_error(message):
+def p_error(message, verbose=True):
     """Prints an error message in red"""
-    print(f"    {p_colorize('ERROR:', '31')} {message}")
+    print(f"    {p_colorize('ERROR:', '31')} {message}") if verbose else nullcontext()
 
-def p_ok(message):
+def p_ok(message, verbose=True):
     """Prints an ok message in green"""
-    print(f"       {p_colorize('OK:', '32')} {message}")
+    print(f"       {p_colorize('OK:', '32')} {message}") if verbose else nullcontext()
 
-def p_warning(message):
+def p_warning(message, verbose=True):
     """Prints a warning message in yellow"""
-    print(f"  {p_colorize('WARNING:', '33')} {message}")
+    print(f"  {p_colorize('WARNING:', '33')} {message}") if verbose else nullcontext()
 
 def p_filter_args(func, kwargs):
     """filters arguments dynamically"""

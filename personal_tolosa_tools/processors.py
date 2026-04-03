@@ -1067,124 +1067,210 @@ class MeshDataProcessor(DataProcessor):
 # =============================================================================
 #     ALL MESH CHECKING
 # =============================================================================
-    def check_bottleneck_cells(self):
+    def check_bottleneck_cells(self,
+                                numbering: str = 'meshio') -> np.ndarray:
         """
-        Returns an array of indexes of cells composed only of all boundary nodes
+        Returns an array of indexes of cells composed only of all boundary nodes.
+    
+        Parameters
+        ----------
+        numbering : 'meshio' (default) — 0-based block-local indices;
+                    'gmsh'             — 1-based global gmsh indices.
         """
+        if numbering not in ('meshio', 'gmsh'):
+            raise ValueError(f"numbering must be 'meshio' or 'gmsh', got {numbering!r}.")
+    
         bnd_nodes = self.compute_all_boundary_nodes()
         if not len(bnd_nodes):
             p_error("Cannot compute bottleneck cells because of missing boundary_nodes")
             return np.array([])
     
-        # Boolean mask: True for each node index that is a boundary node
-        is_boundary = np.isin(self.cells, bnd_nodes)
-    
-        # A bottleneck cell has all 3 nodes on the boundary
+        is_boundary    = np.isin(self.cells, bnd_nodes)
         bottleneck_mask = is_boundary.all(axis=1)
+        meshio_indices = np.where(bottleneck_mask)[0]
     
-        return np.where(bottleneck_mask)[0]
+        if numbering == 'gmsh':
+            return self.meshio_to_global(cell_indices_meshio=meshio_indices)['cell_indices']
+        return meshio_indices
     
     
-    def check_floating_cells(self):
+    def check_floating_cells(self,
+                              numbering: str = 'meshio') -> np.ndarray:
         """
-        Returns an array of indexes of unconnected triangles to the main mesh
+        Returns an array of indexes of unconnected triangles to the main mesh.
+    
+        Parameters
+        ----------
+        numbering : 'meshio' (default) — 0-based block-local indices;
+                    'gmsh'             — 1-based global gmsh indices.
         """
-        groups = self.compute_cell_groups()
+        if numbering not in ('meshio', 'gmsh'):
+            raise ValueError(f"numbering must be 'meshio' or 'gmsh', got {numbering!r}.")
+    
+        groups   = self.compute_cell_groups()
         N_groups = len(groups)
         if N_groups < 2:
             return np.array([])
-        else:
-            len_groups = np.array([len(g) for g in groups])
-            small_groups = [
-                groups[i] 
-                for i in range(N_groups) 
-                if len_groups[i] != max(len_groups)
-                ]
-            return np.concatenate(small_groups)
+    
+        len_groups     = np.array([len(g) for g in groups])
+        small_groups   = [groups[i] for i in range(N_groups)
+                          if len_groups[i] != max(len_groups)]
+        meshio_indices = np.concatenate(small_groups)
+    
+        if numbering == 'gmsh':
+            return self.meshio_to_global(cell_indices_meshio=meshio_indices)['cell_indices']
+        return meshio_indices
     
     
-    def check_floating_nodes(self):
+    def check_floating_nodes(self,
+                              numbering: str = 'meshio') -> np.ndarray:
         """
-        Returns an array of nodes indexes not referenced by any triangle
+        Returns an array of node indexes not referenced by any triangle.
+    
+        Parameters
+        ----------
+        numbering : 'meshio' (default) — 0-based node indices;
+                    'gmsh'             — 1-based gmsh node indices.
         """
+        if numbering not in ('meshio', 'gmsh'):
+            raise ValueError(f"numbering must be 'meshio' or 'gmsh', got {numbering!r}.")
+    
         used_by_triangle = np.unique(self.cells)
-        all_nodes = np.arange(self.num_points)
-        return np.setdiff1d(all_nodes, used_by_triangle)
-        
-        
-    def check_floating_vertexes(self):
+        all_nodes        = np.arange(self.num_points)
+        meshio_indices   = np.setdiff1d(all_nodes, used_by_triangle)
+    
+        if numbering == 'gmsh':
+            return self.meshio_to_global(node_indices_meshio=meshio_indices)['node_indices']
+        return meshio_indices
+    
+    
+    def check_floating_vertexes(self,
+                                 numbering: str = 'meshio') -> np.ndarray:
         """
-        Returns a np.array of vertexes index for which the node does not 
-        touch any triangle
+        Returns a np.array of vertex indices for which the node does not
+        touch any triangle.
+    
+        Parameters
+        ----------
+        numbering : 'meshio' (default) — 0-based block-local indices;
+                    'gmsh'             — 1-based global gmsh indices.
         """
-        if self.num_vertexes:
-            used_by_triangle = np.unique(self.cells)
-            # self.vertexes is (V, 1), flatten to (V,) for isin
-            floating_mask = ~np.isin(self.vertexes.ravel(), used_by_triangle)
-            return np.where(floating_mask)[0]
-        else :
+        if numbering not in ('meshio', 'gmsh'):
+            raise ValueError(f"numbering must be 'meshio' or 'gmsh', got {numbering!r}.")
+    
+        if not self.num_vertexes:
             return np.array([])
-        
-        
-    def check_floating_lines(self):
+    
+        used_by_triangle = np.unique(self.cells)
+        floating_mask    = ~np.isin(self.vertexes.ravel(), used_by_triangle)
+        meshio_indices   = np.where(floating_mask)[0]
+    
+        if numbering == 'gmsh':
+            return self.meshio_to_global(vertex_indices_meshio=meshio_indices)['vertex_indices']
+        return meshio_indices
+    
+    
+    def check_floating_lines(self,
+                              numbering: str = 'meshio') -> np.ndarray:
         """
-        Returns a np.array of line index that are not connected to any 
-        triangular cell
+        Returns a np.array of line indices that are not connected to any
+        triangular cell.
+    
+        Parameters
+        ----------
+        numbering : 'meshio' (default) — 0-based block-local indices;
+                    'gmsh'             — 1-based global gmsh indices.
         """
-        if self.num_lines:
-            ltc = self.compute_line_to_cell() 
-            # np.nan in first column if no cell attached
-            return np.arange(self.num_lines)[np.isnan(ltc[:,0])]
-        else :
+        if numbering not in ('meshio', 'gmsh'):
+            raise ValueError(f"numbering must be 'meshio' or 'gmsh', got {numbering!r}.")
+    
+        if not self.num_lines:
             return np.array([])
-        
-        
-    def check_lines_not_boundary(self) -> np.ndarray:
+    
+        ltc            = self.compute_line_to_cell()
+        meshio_indices = np.arange(self.num_lines)[np.isnan(ltc[:, 0])]
+    
+        if numbering == 'gmsh':
+            return self.meshio_to_global(line_indices_meshio=meshio_indices)['line_indices']
+        return meshio_indices
+    
+    
+    def check_lines_not_boundary(self,
+                                  numbering: str = 'meshio') -> np.ndarray:
         """
-        Returns indices of line elements that are connected to 2 triangular cells
+        Returns indices of line elements connected to 2 triangular cells
         (i.e. interior lines, not true boundary lines).
-        Uses compute_line_to_cell(): a boundary line has NaN in column 1.
+    
+        Parameters
+        ----------
+        numbering : 'meshio' (default) — 0-based block-local indices;
+                    'gmsh'             — 1-based global gmsh indices.
         """
+        if numbering not in ('meshio', 'gmsh'):
+            raise ValueError(f"numbering must be 'meshio' or 'gmsh', got {numbering!r}.")
+    
         if not self.num_lines:
             return np.array([], dtype=int)
     
-        ltc = self.compute_line_to_cell()              # (L, 2)
-        interior_mask = ~np.isnan(ltc[:, 1])           # both columns filled -> interior
-        
-        return np.where(interior_mask)[0]
-
-
-    def check_boundary_edges_not_in_lines(self):
+        ltc            = self.compute_line_to_cell()           # (L, 2)
+        interior_mask  = ~np.isnan(ltc[:, 1])
+        meshio_indices = np.where(interior_mask)[0]
+    
+        if numbering == 'gmsh':
+            return self.meshio_to_global(line_indices_meshio=meshio_indices)['line_indices']
+        return meshio_indices
+    
+    
+    def check_boundary_edges_not_in_lines(self,
+                                           numbering: str = 'meshio') -> np.ndarray:
         """
-        Returns a np.array of pairs of boundary nodes which are not referenced 
-        as lines. 
-        (Useful for checking the validity of Tolosa meshes)
+        Returns a np.array of pairs of boundary node indices which are not
+        referenced as lines.
+    
+        Parameters
+        ----------
+        numbering : 'meshio' (default) — 0-based node indices in each pair;
+                    'gmsh'             — 1-based gmsh node indices in each pair.
         """
-        boundary_edges = np.sort(self.compute_all_boundary_edges(), axis=-1) 
+        if numbering not in ('meshio', 'gmsh'):
+            raise ValueError(f"numbering must be 'meshio' or 'gmsh', got {numbering!r}.")
+    
+        boundary_edges = np.sort(self.compute_all_boundary_edges(), axis=-1)
         if not len(boundary_edges):
             p_warning("No boundary edges")
             return np.array([])
-        
+    
         if not self.num_lines:
             p_warning("No lines")
-            return np.sort(self.compute_all_boundary_edges(), axis=-1) 
-        lines = np.sort(self.lines, axis=-1)
-        
-        dtype = np.dtype([('i', boundary_edges.dtype), 
-                          ('j', boundary_edges.dtype)])
-        boundary_edges_view = boundary_edges.view(dtype).reshape(-1)
-        lines_view = lines.view(dtype).reshape(-1)
-        
-        diff = np.setdiff1d(boundary_edges_view, lines_view)
-        
-        return(diff.view(boundary_edges.dtype).reshape(-1, 2))
+            result = boundary_edges
+        else:
+            lines = np.sort(self.lines, axis=-1)
+            dtype              = np.dtype([('i', boundary_edges.dtype),
+                                           ('j', boundary_edges.dtype)])
+            boundary_edges_view = boundary_edges.view(dtype).reshape(-1)
+            lines_view          = lines.view(dtype).reshape(-1)
+            diff               = np.setdiff1d(boundary_edges_view, lines_view)
+            result             = diff.view(boundary_edges.dtype).reshape(-1, 2)
     
+        if numbering == 'gmsh':
+            # Convert the flat list of node indices and reshape back to pairs
+            flat           = result.ravel()
+            flat_gmsh      = self.meshio_to_global(node_indices_meshio=flat)['node_indices']
+            return flat_gmsh.reshape(-1, 2)
+        return result
 
     def check_cells_angles(self, 
-                           threshold: float = 10):
+                           threshold: float = 10,
+                           numbering: str   = 'meshio') -> np.ndarray:
         """
         Returns a np.array of node index for triangular cells that display at 
         least one angle smaller than threshold
+    
+        Parameters
+        ----------
+        threshold   : minimum angle threshold accepted.
+        numbering  : 'meshio' (default) — returns 0-based indices local to the
+                     triangle block; 'gmsh' — returns 1-based global gmsh indices.
         """
         triangles = self.points_array[self.cells][:,:,:2]
         
@@ -1219,14 +1305,26 @@ class MeshDataProcessor(DataProcessor):
         angles = np.rad2deg(np.stack([angle_A, angle_B, angle_C], axis=1))
         mask_angles = angles.min(axis=-1)<threshold
         
-        return np.arange(self.num_cells)[mask_angles]
+        meshio_indices = np.arange(self.num_cells)[mask_angles]
+    
+        if numbering == 'gmsh':
+            return self.meshio_to_global(cell_indices_meshio=meshio_indices)['cell_indices']
+    
+        return meshio_indices
     
     
     def check_cell_size(self, 
-                        min_reso: float = .1):
+                        min_reso: float = .1,
+                        numbering: str   = 'meshio') -> np.ndarray:
         """
-        Returns indices of triangular cells whose mean edge length is lower 
+        Returns indices of triangular cells whose mean edge length is lower
         than min_reso.
+    
+        Parameters
+        ----------
+        min_reso   : minimum mean edge length threshold.
+        numbering  : 'meshio' (default) — returns 0-based indices local to the
+                     triangle block; 'gmsh' — returns 1-based global gmsh indices.
         """
         triangles = self.points_array[self.cells][:,:,:2]
         
@@ -1241,20 +1339,33 @@ class MeshDataProcessor(DataProcessor):
         l2 = np.linalg.norm(e2, axis=1)
     
         mean_length = (l0 + l1 + l2) / 3.0
+        
+        meshio_indices = np.where(mean_length < min_reso)[0]
     
-        return np.where(mean_length < min_reso)[0]
+        if numbering == 'gmsh':
+            return self.meshio_to_global(cell_indices_meshio=meshio_indices)['cell_indices']
     
+        return meshio_indices
     
-    def check_duplicates(self, 
-                         element_type: str = "line", 
-                         decimals:     int = 8):
+    def check_duplicates(self,
+                     element_type: str = "line",
+                     decimals:     int = 8,
+                     numbering:    str = 'meshio') -> np.ndarray:
         """
-        Returns a np.array of indexes of elements found as duplicate of 
+        Returns a np.array of indexes of elements found as duplicate of
         previous elements. element_type must be one of 'node', 'vertex', 'line'
         or 'triangle'.
+    
+        Parameters
+        ----------
+        numbering : 'meshio' (default) — 0-based block-local / node indices;
+                    'gmsh'             — 1-based global gmsh indices.
         """
+        if numbering not in ('meshio', 'gmsh'):
+            raise ValueError(f"numbering must be 'meshio' or 'gmsh', got {numbering!r}.")
+    
         if element_type == "node":
-            elements = self.points_array[:,:2].round(decimals=decimals)
+            elements = self.points_array[:, :2].round(decimals=decimals)
         elif element_type == "vertex":
             elements = self.vertexes
         elif element_type == "line":
@@ -1266,43 +1377,49 @@ class MeshDataProcessor(DataProcessor):
     
         if elements is None or len(elements) == 0:
             return np.array([], dtype=int)
-        
-        # Sort node indices within each row so orientation doesn't matter.
-        # Nodes are always integers except for the 'node' type (XY coordinates).
+    
         if element_type == "node":
-            # Floating-point rows: use void view on the rounded float64 bytes
             sorted_elements = np.ascontiguousarray(elements, dtype=np.float64)
         else:
             sorted_elements = np.sort(
                 np.ascontiguousarray(elements, dtype=np.int64), axis=1
             )
     
-        # Void-view: collapse each row into one opaque scalar for a fast 1-D unique
         row_dtype = np.dtype((np.void, sorted_elements.dtype.itemsize * sorted_elements.shape[1]))
         row_view  = sorted_elements.view(row_dtype).ravel()
     
-        # first_occurrence contains the indices of the first time each unique
-        # signature appears — everything else is a duplicate
-        _, first_occurrence = np.unique(row_view, return_index=True)
-    
-        is_first              = np.zeros(len(elements), dtype=bool)
+        _, first_occurrence        = np.unique(row_view, return_index=True)
+        is_first                   = np.zeros(len(elements), dtype=bool)
         is_first[first_occurrence] = True
-        
-        return np.where(~is_first)[0]
     
+        meshio_indices = np.where(~is_first)[0]
     
+        if numbering == 'gmsh':
+            return self._meshio_indices_to_gmsh(meshio_indices, element_type)
+        return meshio_indices
+
+
     def check_duplicates_local(self,
-                               local_indices: np.ndarray,
-                               element_type:  str = "line",
-                               decimals:      int = 8) -> np.ndarray:
+                                local_indices: np.ndarray,
+                                element_type:  str = "line",
+                                decimals:      int = 8,
+                                numbering:     str = 'meshio') -> np.ndarray:
         """
-        Returns a np.array of global indices of elements found as duplicates,
+        Returns a np.array of indices of elements found as duplicates,
         restricted to local_indices. An element is flagged only if an earlier
         global copy (local or not) already exists.
         element_type must be one of 'node', 'vertex', 'line' or 'triangle'.
+    
+        Parameters
+        ----------
+        numbering : 'meshio' (default) — 0-based block-local / node indices;
+                    'gmsh'             — 1-based global gmsh indices.
         """
+        if numbering not in ('meshio', 'gmsh'):
+            raise ValueError(f"numbering must be 'meshio' or 'gmsh', got {numbering!r}.")
+    
         local_indices = np.atleast_1d(local_indices)
-        
+    
         if element_type == "node":
             elements = self.points_array[:, :2].round(decimals=decimals)
         elif element_type == "vertex":
@@ -1327,22 +1444,32 @@ class MeshDataProcessor(DataProcessor):
         row_dtype = np.dtype((np.void, sorted_elements.dtype.itemsize * sorted_elements.shape[1]))
         row_view  = sorted_elements.view(row_dtype).ravel()
     
-        _, first_occurrence = np.unique(row_view, return_index=True)
-    
+        _, first_occurrence        = np.unique(row_view, return_index=True)
         is_first                   = np.zeros(len(elements), dtype=bool)
         is_first[first_occurrence] = True
-
-        return local_indices[~is_first[local_indices]]
+    
+        meshio_indices = local_indices[~is_first[local_indices]]
+    
+        if numbering == 'gmsh':
+            return self._meshio_indices_to_gmsh(meshio_indices, element_type)
+        return meshio_indices
     
     
-    def check_degenerate(self, 
-                         element_type: str="triangle"):
+    def check_degenerate(self,
+                         element_type: str = "triangle",
+                         numbering:    str = 'meshio') -> np.ndarray:
         """
         Returns a np.array of indexes of degenerate elements (elements with two
-        or more identical node indices). element_type must be 'line' or 
-        'triangle'.
+        or more identical node indices). element_type must be 'line' or 'triangle'.
+    
+        Parameters
+        ----------
+        numbering : 'meshio' (default) — 0-based block-local indices;
+                    'gmsh'             — 1-based global gmsh indices.
         """
-        
+        if numbering not in ('meshio', 'gmsh'):
+            raise ValueError(f"numbering must be 'meshio' or 'gmsh', got {numbering!r}.")
+    
         if element_type == "line":
             elements = self.lines
         elif element_type == "triangle":
@@ -1354,27 +1481,37 @@ class MeshDataProcessor(DataProcessor):
             return np.array([], dtype=int)
     
         if element_type == "line":
-            # Degenerate if both node indices are identical
             degen_mask = elements[:, 0] == elements[:, 1]
-    
-        elif element_type == "triangle":
-            # Degenerate if any two of the three node indices are identical
+        else:
             n0, n1, n2 = elements[:, 0], elements[:, 1], elements[:, 2]
-            degen_mask = (n0 == n1) | (n1 == n2) | (n0 == n2)
+            degen_mask  = (n0 == n1) | (n1 == n2) | (n0 == n2)
     
-        return np.where(degen_mask)[0]
+        meshio_indices = np.where(degen_mask)[0]
+    
+        if numbering == 'gmsh':
+            return self._meshio_indices_to_gmsh(meshio_indices, element_type)
+        return meshio_indices
     
     
     def check_degenerate_local(self,
-                               local_indices: np.ndarray,
-                               element_type:  str = "triangle") -> np.ndarray:
+                                local_indices: np.ndarray,
+                                element_type:  str = "triangle",
+                                numbering:     str = 'meshio') -> np.ndarray:
         """
-        Returns a np.array of global indices of degenerate elements (elements
-        with two or more identical node indices), restricted to local_indices.
+        Returns a np.array of indices of degenerate elements (elements with two
+        or more identical node indices), restricted to local_indices.
         element_type must be 'line' or 'triangle'.
+    
+        Parameters
+        ----------
+        numbering : 'meshio' (default) — 0-based block-local indices;
+                    'gmsh'             — 1-based global gmsh indices.
         """
+        if numbering not in ('meshio', 'gmsh'):
+            raise ValueError(f"numbering must be 'meshio' or 'gmsh', got {numbering!r}.")
+    
         local_indices = np.atleast_1d(local_indices)
-        
+    
         if element_type == "line":
             elements = self.lines
         elif element_type == "triangle":
@@ -1393,29 +1530,47 @@ class MeshDataProcessor(DataProcessor):
             n0, n1, n2 = subset[:, 0], subset[:, 1], subset[:, 2]
             degen_mask  = (n0 == n1) | (n1 == n2) | (n0 == n2)
     
-        return local_indices[degen_mask]
+        meshio_indices = local_indices[degen_mask]
+    
+        if numbering == 'gmsh':
+            return self._meshio_indices_to_gmsh(meshio_indices, element_type)
+        return meshio_indices
     
     
-    def check_triangle_orientation(self):
+    def check_triangle_orientation(self,
+                                   numbering: str = 'meshio') -> np.ndarray:
         """
-        Returns a np.array of indexes of triangular cells in clockwise 
-        direction (these triangles should be swapped)
+        Returns a np.array of indexes of triangular cells in clockwise
+        direction (these triangles should be swapped).
+    
+        Parameters
+        ----------
+        numbering : 'meshio' (default) — 0-based block-local indices;
+                    'gmsh'             — 1-based global gmsh indices.
         """
+        if numbering not in ('meshio', 'gmsh'):
+            raise ValueError(f"numbering must be 'meshio' or 'gmsh', got {numbering!r}.")
+    
         points_array = self.points_array
-        cells = self.cells
-        
+        cells        = self.cells
+    
         A = points_array[cells[:, 0]]
         B = points_array[cells[:, 1]]
         C = points_array[cells[:, 2]]
-        
+    
         cross = (B[:, 0]-A[:, 0])*(C[:, 1]-A[:, 1]) - (B[:, 1]-A[:, 1])*(C[:, 0]-A[:, 0])
-        
-        return np.where(cross<0)[0]
+    
+        meshio_indices = np.where(cross < 0)[0]
+    
+        if numbering == 'gmsh':
+            return self.meshio_to_global(cell_indices_meshio=meshio_indices)['cell_indices']
+        return meshio_indices
     
     
     def check_validity(self, 
                        threshold: float=10, 
                        min_reso:  float=.1, 
+                       numbering: str = 'meshio',
                        verbose:   bool=False) -> dict:
         """
         Returns a dict of basic issues found in the mesh:
@@ -1423,62 +1578,118 @@ class MeshDataProcessor(DataProcessor):
           to at least one triangular cell (should be removed)
           - duplicate_nodes/vertexes/lines/cells : indexes of elements that are
           duplicates of previous element (should be removed)
+          
+        Parameters
+        ----------
+        threshold   : minimum angle threshold accepted.
+        min_reso    : minimum mean edge length threshold.
+        numbering   : 'meshio' (default) — 0-based block-local indices;
+                      'gmsh'             — 1-based global gmsh indices.
         """
         issues = {}
     
         # --- Floating elements (not referenced by any triangle) ---
         with p_timer("Looking for floating_nodes", verbose=verbose):
-            issues["floating_nodes"] = self.check_floating_nodes()
+            issues["floating_nodes"] = self.check_floating_nodes(numbering=numbering)
         with p_timer("Looking for floating_vertexes", verbose=verbose):
-            issues["floating_vertexes"] = self.check_floating_vertexes()
+            issues["floating_vertexes"] = self.check_floating_vertexes(numbering=numbering)
         with p_timer("Looking for floating_lines", verbose=verbose):
-            issues["floating_lines"] = self.check_floating_lines()
+            issues["floating_lines"] = self.check_floating_lines(numbering=numbering)
         
         # --- Duplicate elements ---
         with p_timer("Looking for duplicate_nodes", verbose=verbose):
-            issues["duplicate_nodes"] = self.check_duplicates("node")
+            issues["duplicate_nodes"] = self.check_duplicates("node", numbering=numbering)
         with p_timer("Looking for duplicate_vertexes", verbose=verbose):
-            issues["duplicate_vertexes"] = self.check_duplicates("vertex")
+            issues["duplicate_vertexes"] = self.check_duplicates("vertex", numbering=numbering)
         with p_timer("Looking for duplicate_lines", verbose=verbose):
-            issues["duplicate_lines"] = self.check_duplicates("line")
+            issues["duplicate_lines"] = self.check_duplicates("line", numbering=numbering)
         with p_timer("Looking for duplicate_cells", verbose=verbose):
-            issues["duplicate_cells"] = self.check_duplicates("triangle")
+            issues["duplicate_cells"] = self.check_duplicates("triangle", numbering=numbering)
         
         # --- Degenerate triangles (two or more identical node indices) ---
         with p_timer("Looking for degenerate_line", verbose=verbose):
-            issues["degenerate_line"] = self.check_degenerate("line")
+            issues["degenerate_line"] = self.check_degenerate("line", numbering=numbering)
         with p_timer("Looking for degenerate_cells", verbose=verbose):
-            issues["degenerate_cells"] = self.check_degenerate("triangle")
+            issues["degenerate_cells"] = self.check_degenerate("triangle", numbering=numbering)
         
         # --- Distorted triangles ---
         with p_timer("Looking for distorted_cells", verbose=verbose):
-            issues["distorted_cells"] = self.check_cells_angles(threshold=threshold)
+            issues["distorted_cells"] = self.check_cells_angles(threshold=threshold, numbering=numbering)
         
         # --- Misoriented cells (clockwise order of nodes) ---
         with p_timer("Looking for clockwise_cells", verbose=verbose):
-            issues["clockwise_cells"] = self.check_triangle_orientation()
+            issues["clockwise_cells"] = self.check_triangle_orientation(numbering=numbering)
         
         # --- Triangular cells of smaller size than expected ---
         with p_timer("Looking for small_cells", verbose=verbose):
-            issues["small_cells"] = self.check_cell_size(min_reso=min_reso)
+            issues["small_cells"] = self.check_cell_size(min_reso=min_reso, numbering=numbering)
         
         # # ===================================================================
         # # Here are some checks that are not always useful and much slower
         # # ===================================================================
         # # --- boundary edge of the mesh not in lines ---
-        # with p_timer("Looking for missing_bnd", verbose=verbose):
-        #     issues["missing_bnd"] = self.check_boundary_edges_not_in_lines()
+        with p_timer("Looking for missing_bnd", verbose=verbose):
+            issues["missing_bnd"] = self.check_boundary_edges_not_in_lines(numbering=numbering)
         
-        # # --- Floating cells unconnected to the main mesh ---
-        # with p_timer("Looking for floating_cells", verbose=verbose):
-        #     issues["floating_cells"] = self.check_floating_cells()
+        # --- Floating cells unconnected to the main mesh ---
+        with p_timer("Looking for floating_cells", verbose=verbose):
+            issues["floating_cells"] = self.check_floating_cells(numbering=numbering)
         
-        # # --- Bottleneck cells (only one neighbouring cell)  ---
-        # with p_timer("Looking for bottleneck_cells", verbose=verbose):
-        #     issues["bottleneck_cells"] = self.check_bottleneck_cells()
+        # --- Bottleneck cells (only one neighbouring cell)  ---
+        with p_timer("Looking for bottleneck_cells", verbose=verbose):
+            issues["bottleneck_cells"] = self.check_bottleneck_cells(numbering=numbering)
         
         return issues
     
+    
+    def check_float_dupli_degen(self, 
+                                verbose: bool = False, 
+                                numbering: str = 'meshio') -> dict:
+        """
+        Run only the floating-element, duplicate, and degenerate checks on a
+        MeshDataProcessor.  Skips the heavier / less actionable checks
+        (distorted angles, cell size, orientation) that check_validity also 
+        runs.
+    
+        Returns
+        -------
+        dict with keys:
+            floating_nodes, floating_vertexes, floating_lines,
+            duplicate_nodes, duplicate_vertexes, duplicate_lines, 
+            duplicate_cells, degenerate_line, degenerate_cells
+        Each value is a np.ndarray of affected indices (empty array = no issue)
+        """
+        issues = {}
+    
+        with p_timer("Looking for floating_nodes",    verbose=verbose):
+            issues["floating_nodes"]    = self.check_floating_nodes(numbering=numbering)
+        with p_timer("Looking for floating_vertexes", verbose=verbose):
+            issues["floating_vertexes"] = self.check_floating_vertexes(numbering=numbering)
+        with p_timer("Looking for floating_lines",    verbose=verbose):
+            issues["floating_lines"]    = self.check_floating_lines(numbering=numbering)
+    
+        with p_timer("Looking for duplicate_nodes",    verbose=verbose):
+            issues["duplicate_nodes"]    = self.check_duplicates("node", numbering=numbering)
+        with p_timer("Looking for duplicate_vertexes", verbose=verbose):
+            issues["duplicate_vertexes"] = self.check_duplicates("vertex", numbering=numbering)
+        with p_timer("Looking for duplicate_lines",    verbose=verbose):
+            issues["duplicate_lines"]    = self.check_duplicates("line", numbering=numbering)
+        with p_timer("Looking for duplicate_cells",    verbose=verbose):
+            issues["duplicate_cells"]    = self.check_duplicates("triangle", numbering=numbering)
+    
+        with p_timer("Looking for degenerate_line",  verbose=verbose):
+            issues["degenerate_line"]  = self.check_degenerate("line", numbering=numbering)
+        with p_timer("Looking for degenerate_cells", verbose=verbose):
+            issues["degenerate_cells"] = self.check_degenerate("triangle", numbering=numbering)
+    
+        # --- Floating cells unconnected to the main mesh ---
+        with p_timer("Looking for floating_cells", verbose=verbose):
+            issues["floating_cells"] = self.check_floating_cells(numbering=numbering)
+            
+        with p_timer("Looking for clockwise_cells", verbose=verbose):
+            issues["clockwise_cells"] = self.check_triangle_orientation(numbering=numbering)
+            
+        return issues
     
 # =============================================================================
 #     USEFUL OPERATIONS ON THE MESH FOR SAVING OR PLOTTING
@@ -2111,6 +2322,90 @@ class MeshDataProcessor(DataProcessor):
             "vertex_indices": vertex_out,
         }
     
+    def _meshio_indices_to_gmsh(self,
+                                 meshio_indices: np.ndarray,
+                                 element_type:   str) -> np.ndarray:
+        """
+        Route meshio_indices through meshio_to_global using the correct
+        keyword for the given element_type.
+        """
+        _kwarg = {
+            "node":     "node_indices_meshio",
+            "vertex":   "vertex_indices_meshio",
+            "line":     "line_indices_meshio",
+            "triangle": "cell_indices_meshio",
+        }
+        key = _kwarg[element_type]
+        return self.meshio_to_global(**{key: meshio_indices})[key.replace("_meshio", "")]
+    
+    def meshio_to_global(
+        self,
+        node_indices_meshio:   np.ndarray | list | None = None,
+        cell_indices_meshio:   np.ndarray | list | None = None,
+        line_indices_meshio:   np.ndarray | list | None = None,
+        vertex_indices_meshio: np.ndarray | list | None = None,
+        ) -> dict:
+        """
+        Translate meshio numbering back to gmsh GUI element/node numbering.
+    
+        meshio differences vs gmsh
+        --------------------------
+        - Nodes    : 0-based  ->  gmsh 1-based  (add 1)
+        - Elements : per-block 0-based index  ->  gmsh globally numbered
+                     across ALL blocks in block order, 1-based
+    
+        Parameters
+        ----------
+        node_indices_meshio   : meshio node indices (0-based)
+        cell_indices_meshio   : meshio local triangle indices (0-based, within triangle block)
+        line_indices_meshio   : meshio local line indices (0-based, within line block)
+        vertex_indices_meshio : meshio local vertex indices (0-based, within vertex block)
+    
+        Returns
+        -------
+        dict with keys 'node_indices', 'cell_indices', 'line_indices',
+        'vertex_indices' — all 1-based gmsh global indices, or None if not requested.
+        """
+        # --- Build block offset table (cumulative element counts per block) ----------
+        block_sizes   = np.array([len(b.data) for b in self.data.cells], dtype=np.intp)
+        block_offsets = np.concatenate([[0], np.cumsum(block_sizes)])  # (n_blocks+1,)
+    
+        def _local_to_global(meshio_indices, target_block_index):
+            """
+            Convert 0-based meshio local indices to 1-based gmsh global indices
+            for the block at target_block_index.
+            Raises ValueError if any index is out of range for that block.
+            """
+            if meshio_indices is None:
+                return None
+            arr = np.atleast_1d(np.asarray(meshio_indices, dtype=np.intp)).ravel()
+            block_size = block_offsets[target_block_index + 1] - block_offsets[target_block_index]
+            out_of_block = (arr < 0) | (arr >= block_size)
+            if out_of_block.any():
+                raise ValueError(
+                    f"meshio indices {arr[out_of_block]} are out of range for block "
+                    f"{target_block_index} (valid range [0, {block_size - 1}])."
+                )
+            # local 0-based  ->  global 0-based  ->  gmsh 1-based
+            return (arr + block_offsets[target_block_index] + 1).astype(np.intp)
+    
+        # --- Nodes: simply 0-based -> 1-based ----------------------------------------
+        node_out = None
+        if node_indices_meshio is not None:
+            arr = np.atleast_1d(np.asarray(node_indices_meshio, dtype=np.intp)).ravel()
+            node_out = (arr + 1).astype(np.intp)
+    
+        # --- Elements: per-block local index -> global gmsh index --------------------
+        cell_out   = _local_to_global(cell_indices_meshio,   self.index_triangle)
+        line_out   = _local_to_global(line_indices_meshio,   self.index_line)
+        vertex_out = _local_to_global(vertex_indices_meshio, self.index_vertex)
+    
+        return {
+            "node_indices":   node_out,
+            "cell_indices":   cell_out,
+            "line_indices":   line_out,
+            "vertex_indices": vertex_out,
+        }
     
     def _make_new_processor(
         self,
