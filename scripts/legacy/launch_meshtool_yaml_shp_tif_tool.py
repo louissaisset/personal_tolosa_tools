@@ -22,86 +22,80 @@ def parse_args() -> argparse.Namespace:
         description="Wrapper for 'python3 -m meshtool'.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=__doc__,
-    )
+        )
 
     parser.add_argument(
         "yaml_file",
         type=Path,
         help="Path to the YAML configuration file.",
-    )
+        )
     parser.add_argument(
         "shp_file",
         type=Path,
         help="Path to the primary shapefile (.shp). "
              "Companion files are derived from this path unless overridden.",
-    )
+             )
     parser.add_argument(
         "bathy_file_MSL",
         type=Path,
         help="Path to the bathymetry file.",
-    )
+        )
     parser.add_argument(
         "--tool", "-t",
         required=True,
         nargs="+",
         choices=TOOLS + ["all"],
         metavar="TOOL",
-        help=(
-            "One or more tools to run in sequence: "
-            + ", ".join(TOOLS)
-            + ", or 'all' to run all of them. "
-            "Example: --tool bathy_smooth regional_grid diagnostic"
-        ),
-    )
+        help=("One or more tools to run in sequence: "
+              + ", ".join(TOOLS)
+              + ", or 'all' to run all of them. "
+              "Example: --tool bathy_smooth regional_grid diagnostic"
+              ),
+        )
     parser.add_argument(
         "--msh_file",
         type=Path,
         default=None,
         metavar="FILE",
-        help=(
-            "Path to the mesh file (.msh). "
-            "Defaults to <shp_file_stem>.msh in the shapefile directory."
-        ),
-    )
+        help=("Path to the mesh file (.msh). "
+              "Defaults to <shp_file_stem>.msh in the shapefile directory."
+              ),
+        )
     parser.add_argument(
         "--proj_bathy_file",
         type=Path,
         default=None,
         metavar="FILE",
-        help=(
-            "Path to the projected bathymetry file (.a). "
-            "Defaults to regional.depth-ele.a in the shapefile directory."
-        ),
-    )
+        help=("Path to the projected bathymetry file (.a). "
+              "Defaults to regional.depth-ele.a in the shapefile directory."
+              ),
+        )
     parser.add_argument(
         "--shp_file_interior",
         type=Path,
         default=None,
         metavar="FILE",
-        help=(
-            "Path to the interior shapefile (.shp). "
-            "When provided, the INTER/EXTER auto-detection is skipped entirely."
-        ),
-    )
+        help=("Path to the interior shapefile (.shp). "
+              "When provided, the INTER/EXTER auto-detection is skipped entirely."
+              ),
+        )
     parser.add_argument(
         "--output_dir", "-o",
         type=Path,
         default=None,
         metavar="DIR",
-        help=(
-            "Directory where output files are moved "
-            "(default: current working directory). "
-            "Has no effect when --no_move is set."
-        ),
-    )
+        help=("Directory where output files are moved "
+              "(default: current working directory). "
+              "Has no effect when --no_move is set."
+              ),
+        )
     parser.add_argument(
         "--no_move",
         action="store_true",
-        help=(
-            "Do not move output files after the run. "
-            "Files remain in the shapefile directory."
-        ),
-    )
+        help=("Do not move output files after the run. "
+              "Files remain in the shapefile directory."
+              ),
+        )
     return parser.parse_args()
 
 
