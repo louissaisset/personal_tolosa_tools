@@ -7,22 +7,35 @@ Created on Tue Jul 15 15:23:11 2025
 """
 
 
-import sys, os
-if os.uname()[1].startswith('belenos'):
-    path_tolosa_path = "~/SAVE/DATA/Scripts/personal_tolosa_tools/"
-else:
-    path_tolosa_path = "~/DATA/Scripts/personal_tolosa_tools/"
-os.environ['PATH'] += os.pathsep +  os.path.expanduser(f'{path_tolosa_path}/scripts/tools/')
-sys.path.append(os.path.expanduser(path_tolosa_path))
-import personal_tolosa_tools as ptt
-
 import argparse
 from pathlib import Path
 import re, struct, copy
 import numpy as np
 import rasterio
 import geopandas as gpd
+from shapely import points, STRtree
 from shapely.geometry import Point
+
+from contextlib import  nullcontext
+
+def p_colorize(text, color_code):
+    """Adds color to terminal output"""
+    return f"\033[{color_code}m{text}\033[0m"
+
+def p_error(message, verbose=True):
+    """Prints an error message in red"""
+    print(f"    {p_colorize('ERROR:', '31')} {message}") if verbose else nullcontext()
+
+def p_ok(message, verbose=True):
+    """Prints an ok message in green"""
+    print(f"       {p_colorize('OK:', '32')} {message}") if verbose else nullcontext()
+
+def checkfile(file):
+    if file.exists():
+        p_ok(f"Working with file : {file}")
+    else :
+        raise p_error(f"No such file: {file}")
+        return(0)
 
 def create_parser():
     """Create command line argument parser"""
@@ -31,14 +44,19 @@ def create_parser():
         formatter_class=argparse.RawDescriptionHelpFormatter)
     
     parser.add_argument(
-        '--shp_infras', 
+        '--shp_file', 
         type=str, 
         required=True,
         help='Path to the structure zones shapefile'
     )
-    
     parser.add_argument(
-        '--tif_rectified',
+        '--radius',
+        type=float,
+        default=50.0,
+        help='Radius in metres for the neighbourhood max sampling (default: 500 m)'
+    )
+    parser.add_argument(
+        '--tif_file',
         type=str, 
         required=True,
         help='Path to the new depth TIF file'
@@ -66,10 +84,11 @@ def create_parser():
     
     return parser
 
+
 def read_depth_ele_a(file_depth_ele_a, file_depth_ele_b):
     fb = open( file_depth_ele_b , "r")
     for line in fb:
-        m = re.match("\s*(\d+) depth values", line)
+        m = re.match(r"\s*(\d+) depth values", line)
         if m:
             nv = int(m.group(1))
             break
@@ -81,10 +100,11 @@ def read_depth_ele_a(file_depth_ele_a, file_depth_ele_b):
 
     return(bathy)
 
+
 def read_grid_ele_a(file_grid_ele_a, file_grid_ele_b):
     fb = open( file_grid_ele_b , "r")
     for line in fb:
-        m = re.match("\s*(\d+) longitude values", line)
+        m = re.match(r"\s*(\d+) longitude values", line)
         if m:
             nv = int(m.group(1))
             break
@@ -99,18 +119,18 @@ def read_grid_ele_a(file_grid_ele_a, file_grid_ele_b):
     
     return(cut_latlon)
 
+
 def write_depth_ele_a(newfile, bath_cell):
     bath_cell_bigendian = struct.pack('>' + 'f'*len(bath_cell), *bath_cell)
     fa = open( newfile , "wb" )
     fa.write(bath_cell_bigendian)
     fa.close()
 
-def assign_depth_to_points_optimized(latlon, 
-                                     depth_file, 
-                                     polygons_file, 
-                                     physical_list=[]):
 
-    polygons_gdf = gpd.read_file(polygons_file)
+def select_infra_points(latlon, 
+                        polygons_gdf, 
+                        physical_list=[], 
+                        buffer=50):
 
     # Note: Point(lon, lat) — GeoDataFrame expects (x, y) = (lon, lat)
     points_gdf = gpd.GeoDataFrame(
@@ -118,122 +138,99 @@ def assign_depth_to_points_optimized(latlon,
         geometry=[Point(lat, lon) for lat, lon in latlon],
         crs='EPSG:4326'
     )
+    
+    
+    if polygons_gdf.crs != points_gdf.crs:
+        points_gdf = points_gdf.to_crs(polygons_gdf.crs)
+    
+    # Select only tagged elements
+    if physical_list:
+        polygons_gdf = polygons_gdf[polygons_gdf['physical'].isin(physical_list)].reset_index(drop=True)
+    
+    # Need polygons to select "points within"
+    if not all(polygons_gdf.geom_type.unique() =='Polygon'):
+        polygons_gdf['geometry'] = polygons_gdf.polygonize()
 
-    with rasterio.open(depth_file) as depth_raster:
-        depth_crs = depth_raster.crs
-        
-        if polygons_gdf.crs != depth_crs:
-            polygons_gdf = polygons_gdf.to_crs(depth_crs)
-        if points_gdf.crs != depth_crs:
-            points_gdf = points_gdf.to_crs(depth_crs)
-        
-        # Select only tagged elements
-        if physical_list:
-            polygons_gdf = polygons_gdf[polygons_gdf['physical'].isin(physical_list)].reset_index(drop=True)
-        
-        # Need polygons to select "points within"
-        if not all(polygons_gdf.geom_type.unique() =='Polygon'):
-            polygons_gdf['geometry'] = polygons_gdf.polygonize()
-        depths = np.full(len(latlon), np.nan)
-
-        # Vectorized spatial join - replaces the entire per-point loop
-        points_in_polygons = gpd.sjoin(
-            points_gdf, polygons_gdf, how='inner', predicate='within'
+    # Vectorized spatial join - replaces the entire per-point loop
+    points_in_polygons = gpd.sjoin(
+        points_gdf, 
+        polygons_gdf, 
+        how='inner', 
+        predicate='within'
         )
-
-        if points_in_polygons.empty:
-            return depths
-
-        # Deduplicate: a point may fall in multiple polygons
-        points_in_polygons = points_in_polygons.drop_duplicates(subset='point_idx')
-
-        # Single batched rasterio.sample() call for all matching points
-        coords = [
-            (geom.x, geom.y)
-            for geom in points_in_polygons.geometry
-        ]
-        sampled = np.array(list(depth_raster.sample(coords)))  # shape: (N, bands)
-
-        depth_vals = sampled[:, 0].astype(float)
-
-        # Mask nodata values
-        if depth_raster.nodata is not None:
-            depth_vals[depth_vals == depth_raster.nodata] = np.nan
-
-        # Write back using original indices
-        original_indices = points_in_polygons['point_idx'].values
-        depths[original_indices] = depth_vals
-
-    return depths
-
-
-def assign_depth_to_points_optimized_OLD(latlon, depth_file, polygons_file):
-    """
-    Optimized version using rasterio.sample for depth extraction.
-    """
     
-    # Load the polygons shapefile
-    polygons_gdf = gpd.read_file(polygons_file)
+    points_in_polygons = points_in_polygons.drop_duplicates(subset='point_idx')
     
-    # Convert lat/lon points to geodataframe
-    points_gdf = gpd.GeoDataFrame(
-        geometry=[Point(lat, lon) for lat, lon in latlon],
-        crs='EPSG:4326'
-    )
+
+    buffers       = points_in_polygons.copy()
+    buffers['geometry'] = buffers.geometry.buffer(buffer)
     
-    # Open depth raster
-    with rasterio.open(depth_file) as depth_raster:
-        depth_crs = depth_raster.crs
-        
-        # Transform geometries to match depth raster CRS
-        if polygons_gdf.crs != depth_crs:
-            polygons_gdf = polygons_gdf.to_crs(depth_crs)
-            
-        if points_gdf.crs != depth_crs:
-            points_gdf = points_gdf.to_crs(depth_crs)
-        
-        # Initialize depth array
-        depths = np.full(len(latlon), np.nan)
-        
-        # Create spatial index for polygons for faster lookup
-        polygons_sindex = polygons_gdf.sindex
-        
-        
-        # For each point, check if it's in any polygon
-        for point_idx, point in points_gdf.iterrows():
-            
-            # Get potential polygon matches using spatial index
-            possible_matches_idx = list(polygons_sindex.intersection(point.geometry.bounds))
-            possible_matches = polygons_gdf.iloc[possible_matches_idx]
-            
-            # Check actual intersection
-            intersecting_polygons = possible_matches[possible_matches.intersects(point.geometry)]
-            
-            if not intersecting_polygons.empty:
-                # Point is inside at least one polygon
-                # Sample depth value at this point
-                coords = [(point.geometry.x, point.geometry.y)]
-                depth_values = list(depth_raster.sample(coords))
-                
-                if depth_values and depth_values[0][0] != depth_raster.nodata:
-                    depths[point_idx] = depth_values[0][0]
+    return buffers
 
-        return depths
+def select_depth(buffers, depths, file_newdepth_tif):
+    
+    original_indices   = buffers['point_idx'].values
+    
+    with rasterio.open(file_newdepth_tif) as depth_raster:
+        depth_crs  = depth_raster.crs
+        nodata_val = depth_raster.nodata
+        
+        if depth_crs != buffers.crs:
+            buffers = buffers.to_crs(depth_crs)
+        
+        # ── 3. read ONE raster window = bounding box of all buffers ─────────
+        #    clip to actual raster extent to avoid out-of-bounds windows
+        full_extent = rasterio.windows.Window(
+            0, 0, depth_raster.width, depth_raster.height
+        )
+        roi_window = depth_raster.window(*buffers.total_bounds).intersection(full_extent)
+    
+        raster_data   = depth_raster.read(1, window=roi_window).astype(float)
+        win_transform = depth_raster.window_transform(roi_window)
+    
+        if nodata_val is not None:
+            raster_data[raster_data == nodata_val] = np.nan
+    
+        # ── 4. build STRtree over valid pixel centroids only ────────────────
+        h, w          = raster_data.shape
+        row_idx, col_idx = np.mgrid[0:h, 0:w]
+        xs, ys        = rasterio.transform.xy(
+            win_transform,
+            row_idx.ravel(),
+            col_idx.ravel()
+        )
+        flat_vals  = raster_data.ravel()
+        valid_mask = ~np.isnan(flat_vals)
+    
+        # shapely.points() builds geometries in a vectorised call (much faster
+        # than a list-comprehension of Point() objects)
+        pixel_geoms = points(
+            np.array(xs)[valid_mask],
+            np.array(ys)[valid_mask]
+        )
+        valid_vals = flat_vals[valid_mask]
+        tree       = STRtree(pixel_geoms)   # built once, shared by all queries
+    
+        # ── 5. query each buffer -> max of contained pixels ──────────────────
+        new_depths = copy.copy(depths)
+        for i, geom in enumerate(buffers.geometry):
+            # predicate='within' does exact containment, not just bbox overlap
+            hits = tree.query(geom, predicate='intersects')
+            if len(hits) > 0:
+                # print(original_indices[i], len(hits), np.min(valid_vals[hits]))
+                new_depths[original_indices[i]] = -1*np.max(valid_vals[hits])
+        
+        return new_depths
 
-def checkfile(file):
-    if file.exists():
-        ptt.p_ok(f"Working with file : {file}")
-    else :
-        ptt.p_error(f"No such file: {file}")
-        return(0)
+
 
 def main():
     """
     The program creates a new regional.depth-ele.a type file saved as --save_in
     inside --workdir.
     
-    It uses the polygons contained in --shp_infras and the rectified depths 
-    inside --tif_rectified (absolute paths). 
+    It uses the polygons contained in --shp_file and the rectified depths 
+    inside --tif_file (absolute paths). 
     
     The program assumes all the original depths and cell centers are in the 
     regional.ele and regional.depth files in --workdir. 
@@ -248,23 +245,21 @@ def main():
     if args.workdir:
         current_path = Path(args.workdir)
         if not current_path.exists():
-            ptt.p_error(f"Working directory does not exist: {current_path}")
-            sys.exit(1)
+            raise p_error(f"Working directory does not exist: {current_path}")
         if not current_path.is_dir():
-            ptt.p_error(f"Working directory is not a directory: {current_path}")
-            sys.exit(1)
+            raise p_error(f"Working directory is not a directory: {current_path}")
     else:
         current_path = Path.cwd()
     
     print(f"Launched from : {current_path}")
     
     # Handle user-specified files (can be absolute or relative paths)
-    file_structzones_shp = Path(args.shp_infras)
+    file_structzones_shp = Path(args.shp_file)
     if not file_structzones_shp.is_absolute():
         file_structzones_shp = current_path / file_structzones_shp
     checkfile(file_structzones_shp)
     
-    file_newdepth_tif = Path(args.tif_rectified)
+    file_newdepth_tif = Path(args.tif_file)
     if not file_newdepth_tif.is_absolute():
         file_newdepth_tif = current_path / file_newdepth_tif
     checkfile(file_newdepth_tif)
@@ -286,7 +281,7 @@ def main():
     
     # Define the result file path
     depth_ele_a_new = current_path / args.save_in
-    ptt.p_ok(f"Creating file : {depth_ele_a_new}")
+    p_ok(f"Creating file : {depth_ele_a_new}")
     
     
     # Read cell centers
@@ -295,18 +290,20 @@ def main():
     # Read initial cell depth
     depths = read_depth_ele_a(file_depth_ele_a, file_depth_ele_b)
     
-    # Compute the new sampled depths for the cells inside the infrastructures
-    new_depth_struct = assign_depth_to_points_optimized(latlon, 
-                                                        file_newdepth_tif, 
-                                                        file_structzones_shp,
-                                                        args.physical_list)
+    # Read shp file 
+    polygons_gdf = gpd.read_file(file_structzones_shp)
     
-    # Assemble the depth values
-    new_depth = copy.copy(depths)
-    new_depth[~np.isnan(new_depth_struct)] = -1*new_depth_struct[~np.isnan(new_depth_struct)]
-    
+    # Get buffered points inside infrastructures
+    buffers = select_infra_points(latlon, 
+                                  polygons_gdf, 
+                                  physical_list=['infras'], 
+                                  buffer=args.radius)
+
+    # correct the depth by selecting the max value within in each buffer zone
+    new_depths = select_depth(buffers, depths, file_newdepth_tif)
+
     # Write the new depth values to the result file
-    write_depth_ele_a(depth_ele_a_new, new_depth)
+    write_depth_ele_a(depth_ele_a_new, new_depths)
 
 
 if __name__ == "__main__":
@@ -315,6 +312,120 @@ if __name__ == "__main__":
     
     
     
+# def assign_depth_to_points_optimized_V2(latlon, 
+#                                         depth_file, 
+#                                         polygons_file, 
+#                                         physical_list=[]):
+
+#     polygons_gdf = gpd.read_file(polygons_file)
+
+#     # Note: Point(lon, lat) — GeoDataFrame expects (x, y) = (lon, lat)
+#     points_gdf = gpd.GeoDataFrame(
+#         {'point_idx': range(len(latlon))},
+#         geometry=[Point(lat, lon) for lat, lon in latlon],
+#         crs='EPSG:4326'
+#     )
+
+#     with rasterio.open(depth_file) as depth_raster:
+#         depth_crs = depth_raster.crs
+        
+#         if polygons_gdf.crs != depth_crs:
+#             polygons_gdf = polygons_gdf.to_crs(depth_crs)
+#         if points_gdf.crs != depth_crs:
+#             points_gdf = points_gdf.to_crs(depth_crs)
+        
+#         # Select only tagged elements
+#         if physical_list:
+#             polygons_gdf = polygons_gdf[polygons_gdf['physical'].isin(physical_list)].reset_index(drop=True)
+        
+#         # Need polygons to select "points within"
+#         if not all(polygons_gdf.geom_type.unique() =='Polygon'):
+#             polygons_gdf['geometry'] = polygons_gdf.polygonize()
+#         depths = np.full(len(latlon), np.nan)
+
+#         # Vectorized spatial join - replaces the entire per-point loop
+#         points_in_polygons = gpd.sjoin(
+#             points_gdf, polygons_gdf, how='inner', predicate='within'
+#         )
+
+#         if points_in_polygons.empty:
+#             return depths
+
+#         # Deduplicate: a point may fall in multiple polygons
+#         points_in_polygons = points_in_polygons.drop_duplicates(subset='point_idx')
+
+#         # Single batched rasterio.sample() call for all matching points
+#         coords = [
+#             (geom.x, geom.y)
+#             for geom in points_in_polygons.geometry
+#         ]
+#         sampled = np.array(list(depth_raster.sample(coords)))  # shape: (N, bands)
+
+#         depth_vals = sampled[:, 0].astype(float)
+
+#         # Mask nodata values
+#         if depth_raster.nodata is not None:
+#             depth_vals[depth_vals == depth_raster.nodata] = np.nan
+
+#         # Write back using original indices
+#         original_indices = points_in_polygons['point_idx'].values
+#         depths[original_indices] = depth_vals
+
+#     return depths
+
+
+# def assign_depth_to_points_optimized_OLD(latlon, depth_file, polygons_file):
+#     """
+#     Optimized version using rasterio.sample for depth extraction.
+#     """
+    
+#     # Load the polygons shapefile
+#     polygons_gdf = gpd.read_file(polygons_file)
+    
+#     # Convert lat/lon points to geodataframe
+#     points_gdf = gpd.GeoDataFrame(
+#         geometry=[Point(lat, lon) for lat, lon in latlon],
+#         crs='EPSG:4326'
+#     )
+    
+#     # Open depth raster
+#     with rasterio.open(depth_file) as depth_raster:
+#         depth_crs = depth_raster.crs
+        
+#         # Transform geometries to match depth raster CRS
+#         if polygons_gdf.crs != depth_crs:
+#             polygons_gdf = polygons_gdf.to_crs(depth_crs)
+            
+#         if points_gdf.crs != depth_crs:
+#             points_gdf = points_gdf.to_crs(depth_crs)
+        
+#         # Initialize depth array
+#         depths = np.full(len(latlon), np.nan)
+        
+#         # Create spatial index for polygons for faster lookup
+#         polygons_sindex = polygons_gdf.sindex
+        
+        
+#         # For each point, check if it's in any polygon
+#         for point_idx, point in points_gdf.iterrows():
+            
+#             # Get potential polygon matches using spatial index
+#             possible_matches_idx = list(polygons_sindex.intersection(point.geometry.bounds))
+#             possible_matches = polygons_gdf.iloc[possible_matches_idx]
+            
+#             # Check actual intersection
+#             intersecting_polygons = possible_matches[possible_matches.intersects(point.geometry)]
+            
+#             if not intersecting_polygons.empty:
+#                 # Point is inside at least one polygon
+#                 # Sample depth value at this point
+#                 coords = [(point.geometry.x, point.geometry.y)]
+#                 depth_values = list(depth_raster.sample(coords))
+                
+#                 if depth_values and depth_values[0][0] != depth_raster.nodata:
+#                     depths[point_idx] = depth_values[0][0]
+
+#         return depths
     
     # # Structure cells in original bathy
     # fig, ax = plt.subplots(1,1, dpi=300)
