@@ -18,9 +18,8 @@ from meshio import Mesh
 # strategy factory pattern ?
 class Reader(ABC):
     # PATTERN = re.compile(r"^(?P<name>[a-z_]*)(?:_(?P<num>\d{6}))?\.(?P<ext>bin|txt|vtk|plt|msh)$")
-    PATTERN = re.compile(r"^.*\.(?P<ext>bin|txt|vtk|plt|msh)$")
-                         
-
+    PATTERN = re.compile(r"^.*\.(?P<ext>bin|txt|vtk|plt|msh|csv)$")
+    
     @abstractmethod
     def read(self, **kwargs):
         pass
@@ -534,7 +533,7 @@ class TxtReader(Reader):
     Args:
         Reader (_type_): _description_
     """
-    PATTERN = re.compile(r"^.*\.txt$")
+    PATTERN = re.compile(r"^.*\.(?:txt|csv)$")
 
     def __init__(self, path :str, filename :str):
         """_summary_
@@ -630,7 +629,38 @@ class DataMinMaxTxtReader(TxtReader):
                                         sep=r"/s+", engine='python',
                                           **p_filter_args(pd.read_csv, kwargs))
         return self.data_minmax
-    
+
+
+class CsvReader(TxtReader):
+    """Reader for classical comma-separated text files with a header row,
+    e.g.:
+
+        time,julian_cnes,ssh,u,v,bathy
+          6.0180393276E+001,  2.1550000697E+004, ...
+
+    Args:
+        TxtReader (TxtReader): parent text-family reader.
+    """
+
+    PATTERN = re.compile(r"^.*\.csv$")
+
+    def read(self, **kwargs) -> pd.DataFrame:
+        """Parse the csv file into a DataFrame, bypassing
+        TxtReader.read() (no need for the raw-string intermediate step).
+
+        Returns:
+            pd.DataFrame: one column per csv field, header-named.
+        """
+        defaults = dict(sep=",", skipinitialspace=True)
+        defaults.update(p_filter_args(pd.read_csv, kwargs))
+
+        try:
+            self.data = pd.read_csv(os.path.join(self.path, self.filename), **defaults)
+            self.data.columns = [c.strip() for c in self.data.columns]
+            return self.data
+        except FileNotFoundError:
+            logging.error("%s doesn't exist", os.path.join(self.path, self.filename))
+
     
 class MeshIOReader(Reader):
     """
@@ -915,6 +945,7 @@ class WhichReader():
                          #('bin', 'default') : BinReader,
                          ('txt', 'info') : InfoTxtReader,
                          ('txt', 'data_minmax') : DataMinMaxTxtReader,
+                         ('txt', 'csv') : CsvReader,
                          #('txt', 'default') : TxtReader,
                          ('msh', 'data') : DataMshReader,
                          ('msh', 'default') : MshReader,

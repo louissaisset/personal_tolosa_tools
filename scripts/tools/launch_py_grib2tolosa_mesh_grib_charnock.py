@@ -362,13 +362,13 @@ def _wind_components_from_direction(direction_deg: float,
     Meteorological convention: direction is the angle FROM which the wind
     blows, measured clockwise from North.
 
-        u = −|U| sin(dir)      (eastward component)
-        v = −|U| cos(dir)      (northward component)
+        u = -|U| sin(dir)      (eastward component)
+        v = -|U| cos(dir)      (northward component)
 
     Examples
     --------
-    dir=0   (N)  ->  u= 0,  v=−|U|   (wind blowing southward)
-    dir=90  (E)  ->  u=−|U|, v=0     (wind blowing westward)
+    dir=0   (N)  ->  u= 0,  v=-|U|   (wind blowing southward)
+    dir=90  (E)  ->  u=-|U|, v=0     (wind blowing westward)
     dir=180 (S)  ->  u= 0,  v=+|U|   (wind blowing northward)
     dir=270 (W)  ->  u=+|U|, v=0     (wind blowing eastward)
     """
@@ -773,6 +773,13 @@ def main():
                       f"jul={jul_times[-1]:.4f}")
 
         print("Writing output files …")
+
+
+    # =========================================================================
+    #  Cut off the forcing in the shallow water areas
+    # =========================================================================
+    depth  = np.fromfile(mesh_path.parent/'regional.depth-ele.a', dtype='>f4')
+    mask = depth > 15
 
     # =========================================================================
     #  5. Write .a / .b output files  (identical for both modes)

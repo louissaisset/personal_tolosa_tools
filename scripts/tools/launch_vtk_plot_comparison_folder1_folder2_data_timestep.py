@@ -60,7 +60,7 @@ def main():
     parser.add_argument('--folder2', dest='folder2', default=None, help='Second folder parameter as kwarg')
     parser.add_argument('--data_key', dest='data_key', default=None, help='Type of data to compare as kwarg')
     parser.add_argument('--timestep', dest='timestep', default=None, help='Timestep parameter as kwarg')
-    parser.add_argument('--maxval', dest='maxval', default=None, help='Centered colorbar max value')
+    parser.add_argument('--maxval', dest='maxval', type=float, default=None, help='Centered colorbar max value')
     parser.add_argument('--BCtype', dest='BCtype', default=None, help='Some description of the BC that are compared (for the figure names)')
     
     args = parser.parse_args()
@@ -120,25 +120,12 @@ def main():
     plotter.figsize = (3,3)
     plotter.figure_tickfontsize = 5
     plotter.pcolor_cmap = 'RdBu'
-    plotter.pcolor_max = 0.1
+    plotter.pcolor_max = float(maxval)
     plotter.pcolor_min = -plotter.pcolor_max
     plotter.pcolor_key = data_key
     plotter.contour_key = ''
     plotter.quiver_u_key = ''
     plotter.quiver_v_key = ''
-    plotter.rectangle_positions = [(-10000, -3000, -4000, 1000), 
-                                   (-7000, -2000, 4500, 8500), 
-                                   (-17000, -12000, -10000, -5000), 
-                                   (-1000, 4000, -2000, 2000)]
-    plotter.rectangle_colors = 'k'
-    new_figsize_list = [(4,4),
-                        (3.5,3.5),
-                        (3,3),
-                        (3.5,3.5)]
-    new_filename_list = ['zoom_ilelongue',
-                         'zoom_port',
-                         'zoom_pointepenhir',
-                         'zoom_bassinest']
     
     # Keep the original file name in memory
     N1 = folder1.parents[-current_path.parents.__len__()-2].name
@@ -174,9 +161,7 @@ def main():
         triplet = zip([timestep_eval], to_be_processed_1, to_be_processed_2)
     else:
         triplet = zip(timestep_eval, to_be_processed_1, to_be_processed_2)
-    
-    
-    
+
     print("\nProcessing and plotting the data...")
     delayed_plot = []
     for t, step_1, step_2 in triplet:
@@ -193,14 +178,6 @@ def main():
         delayed_plot += [ptt.plot_tri_data_comparison(deepcopy(plotter), 
                                                       process_type, 
                                                       step_1, step_2)]
-        
-        # Iterate over the zoom zones and delay the corresponding figure plotting
-        for newplotter, new_filename, new_figsize in zip(plotter.zoomed_plotters, new_filename_list, new_figsize_list):
-            newplotter.figure_filename = '_'.join([old_filename, f'{new_filename}', f"{t:05d}"])
-            newplotter.figure_size = new_figsize
-            delayed_plot += [ptt.plot_tri_data_comparison(deepcopy(newplotter), 
-                                                          process_type, 
-                                                          step_1, step_2)]
             
     # Ask for the computing and saving of such figures
     dask.compute(*delayed_plot)

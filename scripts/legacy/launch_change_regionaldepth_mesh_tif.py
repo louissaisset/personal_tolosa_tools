@@ -166,6 +166,7 @@ def select_infra_points(latlon,
     buffers['geometry'] = buffers.geometry.buffer(buffer)
     
     return buffers
+    
 
 def select_depth(buffers, depths, file_newdepth_tif):
     

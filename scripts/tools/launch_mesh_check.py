@@ -27,14 +27,14 @@ import personal_tolosa_tools as ptt
 
 import argparse
 from pathlib import Path
-import numpy as np
+from numpy import array
 
 
 # =============================================================================
 # ARGUMENT PARSER
 # =============================================================================
 
-def create_parser():
+def create_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
             "Read a .msh mesh file and report floating, duplicate, and "
@@ -89,6 +89,13 @@ def create_parser():
         help="Print per-check timing information.",
     )
 
+    parser.add_argument(
+        "--without_node", 
+        action="store_false",
+        default=True,
+        help="Add node indexes comprised in the element",
+    )
+
     return parser
 
 
@@ -135,7 +142,7 @@ def print_issues(issues: dict) -> bool:
     for group_title, keys in groups.items():
         ptt.p_ok(f"{group_title}:")
         for key in keys:
-            arr   = issues.get(key, np.array([]))
+            arr   = issues.get(key, array([]))
             n     = len(arr)
             label = ISSUE_LABELS.get(key, key)
             if n:
@@ -204,7 +211,7 @@ def main():
         f"{processor.num_vertexes} vertexes."
     )
     ptt.p_ok(f"Check parameters: threshold={threshold}°, min_reso={min_reso}")
-
+    
     # ------------------------------------------------------------------
     # Run checks
     # ------------------------------------------------------------------
@@ -214,7 +221,6 @@ def main():
                                           min_reso=min_reso,
                                           numbering=numbering,
                                           verbose=verbose)
-
     any_issue = print_issues(issues)
 
     # ------------------------------------------------------------------

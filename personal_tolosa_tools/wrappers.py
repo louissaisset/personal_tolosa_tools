@@ -6,7 +6,7 @@ A series of usefull wrappers to be used in multiple tools
 
 import sys
 from .common import p_error, p_ok
-from .processors import VTKDataProcessor, BinDataProcessor
+from .processors import VTKDataProcessor, BinDataProcessor, MeshDataProcessor
 from .readers import FileReader, InfoTxtReader, DataBinReader, MeshBinReader, DataVTKReader
 
 from dask import delayed
@@ -53,7 +53,7 @@ def files_for_timestep(t, folder,
     else:
         return(None, '')
 
-def files_for_timesteps(timestep_eval, folder):
+def files_for_timesteps(timestep_eval, folder, verbose=True):
     """
     Parameters
     ----------
@@ -70,16 +70,16 @@ def files_for_timesteps(timestep_eval, folder):
     
     # Define all available files to be read
     txt_info_files = sorted(list(InfoTxtReader.search(folder)))
-    p_ok(f"Available txt info files : {txt_info_files}")
+    p_ok(f"Available txt info files : {txt_info_files}", verbose)
     bin_data_files = sorted(list(DataBinReader.search(folder)))
-    p_ok(f"Available binary data files : {bin_data_files}")
+    p_ok(f"Available binary data files : {bin_data_files}", verbose)
     bin_mesh_files = sorted(list(MeshBinReader.search(folder)))
-    p_ok(f"Available binary mesh files : {bin_mesh_files}")
+    p_ok(f"Available binary mesh files : {bin_mesh_files}", verbose)
     vtk_data_files = sorted(list(DataVTKReader.search(folder)))
-    p_ok(f"Available VTK Data files : {vtk_data_files}")
+    p_ok(f"Available VTK Data files : {vtk_data_files}", verbose)
     
     resu = []
-    if timestep_eval.__class__ == int:
+    if timestep_eval is int:
         resu += [files_for_timestep(timestep_eval, 
                                     folder,
                                     txt_info_files, 
@@ -97,7 +97,7 @@ def files_for_timesteps(timestep_eval, folder):
                                             bin_mesh_files, 
                                             vtk_data_files)]
         except:
-            p_error("Unrecognised timestep format. Should be either int or iterable")
+            p_error("Unrecognised timestep format. Should be either int or iterable", verbose)
             sys.exit(1)
     return(resu)
 
@@ -124,11 +124,11 @@ def process_vtk(folder, vtk_data_file):
     data = file_rdr.read_file(folder, vtk_data_file)
     
     # Process the contents of the file
-    processor = VTKDataProcessor(data)
+    processor = MeshDataProcessor(data)
     
     return(processor)
 
-def process_bin(folder, bin_data_file, bin_mesh_file, txt_info_file):
+def process_bin(folder, bin_data_file, bin_mesh_file, txt_info_file, verbose=True):
     """
     Args
     ----------
@@ -144,7 +144,7 @@ def process_bin(folder, bin_data_file, bin_mesh_file, txt_info_file):
     Returns
     -------
     processor :
-        A personal_tolosa_tools.processors.VBinDataProcessor that uses the data
+        A personal_tolosa_tools.processors.BinDataProcessor that uses the data
         inside bin_data_file.
     """
     # Instantiate the file reader
@@ -157,7 +157,7 @@ def process_bin(folder, bin_data_file, bin_mesh_file, txt_info_file):
     possible_keys = [k for k in details.keys() if (k.endswith('_data_xxxxxx.bin') or k==bin_data_file)]
     if possible_keys :
         variables = details[possible_keys[0]]['variables']
-        p_ok(f"Using Variables: {variables}")
+        p_ok(f"Using Variables: {variables}", verbose)
     else:
         sys.exit()
     # Read the contents of each of the binary mesh
@@ -165,10 +165,13 @@ def process_bin(folder, bin_data_file, bin_mesh_file, txt_info_file):
     
     # Read the contents of each of the binary data file
     data = file_rdr.read_file(folder, bin_data_file, variables=variables)
-    
+    for _, m in data.items():
+        m.points = mesh.points
+        m.cells = mesh.cells
+
     # Process the contents of the file
-    processor = BinDataProcessor(data, mesh, variables)
-    
+    processor = MeshDataProcessor(data[list(data.keys())[0]])
+
     return(processor)
 
 @delayed
@@ -191,6 +194,7 @@ def plot_data_plotter(plotter, process_type, *args):
         processor = process_vtk(*args)
     elif process_type == "bin":
         processor = process_bin(*args)
+
     plotter.Plot(processor)
 
 
@@ -224,22 +228,11 @@ def plot_tri_data_comparison(plotter, process_type, args1, args2):
     
     cell_data_diff = processor1.compute_cell_data_differences(processor2)
     tripcolor_tri, tricontour_tri = processor1.compute_triangulations()
-    plotter.plot_triangle_data(tripcolor_tri, 
+    plotter.plot_triangle_data(processor1.points_array,
+                               tripcolor_tri, 
                                tricontour_tri,
+                               processor1.cell_centers_array,
                                cell_data_diff, 
-                               processor1.cell_centers_array)
-
-@delayed
-def interp_data_on_grid(X, Y, data_key, process_type, *process_args):
-    
-    if process_type == "vtk":
-        processor = process_vtk(*process_args)
-    elif process_type == "bin":
-        processor = process_bin(*process_args)
-    
-    interpolated_value = processor.compute_interpolation_masked_grid(X, Y, 
-                                                                     data_key,
-                                                                     method='nearest')
-    return(interpolated_value)
+                               processor1.point_data)
 
 

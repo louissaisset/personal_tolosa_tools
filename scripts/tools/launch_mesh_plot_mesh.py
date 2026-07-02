@@ -47,7 +47,7 @@ def create_parser():
         )
     
     parser.add_argument(
-        '--mesh_file', 
+        '--file', 
         type=str,
         default=None,
         help='Mesh File (default: first .msh file in current folder)'
@@ -134,32 +134,32 @@ def main():
     
     
     # Select file
-    if not args.mesh_file:
-        mesh_files = sorted(list(ptt.MshReader.search(current_path)))
-        if not mesh_files:
+    if not args.file:
+        files = sorted(list(ptt.MshReader.search(current_path)))
+        if not files:
             ptt.p_error("No .msh files found.")
             sys.exit(1)
-        mesh_file = current_path / Path(mesh_files[0])
+        file = current_path / Path(files[0])
         if verbose:
-            ptt.p_ok(f"Using mesh file: {mesh_file}")
+            ptt.p_ok(f"Using mesh file: {file}")
     else:
-        mesh_file = Path(args.mesh_file)
+        file = Path(args.file)
 
-        # Case 2: mesh_file is not absolute → make it relative to workdir
-        if not mesh_file.is_absolute():
-            mesh_file = current_path / mesh_file
+        # Case 2: file is not absolute → make it relative to workdir
+        if not file.is_absolute():
+            file = current_path / file
         
-        checkfile(mesh_file)
+        checkfile(file)
         if verbose:
-            ptt.p_ok(f"Using mesh file: {mesh_file}")
+            ptt.p_ok(f"Using mesh file: {file}")
     
     if verbose:
         ptt.p_ok("Beginning the plotting...")
         
     # Instantiate the reader
     file_rdr = ptt.FileReader()
-    mesh = file_rdr.read_file(os.path.dirname(mesh_file), 
-                              os.path.basename(mesh_file))
+    mesh = file_rdr.read_file(os.path.dirname(file), 
+                              os.path.basename(file))
     
     # Processdata
     processor = ptt.MeshDataProcessor(mesh)
@@ -175,7 +175,7 @@ def main():
     plotter.quiver_u_key = ''
     plotter.quiver_v_key = ''
     
-    plotter.figure_filename = os.path.basename(mesh_file)
+    plotter.figure_filename = os.path.basename(file)
     
     plotter.triplot = args.triangle
         
