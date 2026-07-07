@@ -13,13 +13,6 @@ import pandas as pd
 import rasterio
 import xarray as xr
 
-# --- Path setup for personal_tolosa_tools -----------------------------------
-if os.uname()[1].startswith('belenos'):
-    path_tolosa_path = "~/SAVE/DATA/Scripts/personal_tolosa_tools/"
-else:
-    path_tolosa_path = "~/DATA/Scripts/personal_tolosa_tools/"
-os.environ['PATH'] += os.pathsep + os.path.expanduser(f'{path_tolosa_path}/scripts/tools/')
-sys.path.append(os.path.expanduser(path_tolosa_path))
 import personal_tolosa_tools as ptt
 
 WATER_LEVEL_VAR = "ssh"
@@ -89,7 +82,7 @@ def get_elli_to_nm_offset(bathyelli_dataset, lon, lat):
     Ellipsoid -> NM vertical offset, i.e. the value to ADD to an ellipsoidal
     height to obtain the corresponding NM height.
 
-    NOTE: verify the sign convention of your BathyElli raster (it may encode
+    NOTE: verify the sign convention of the BathyElli raster (it may encode
     NM - Ellipsoid or Ellipsoid - NM depending on how it was produced).
     """
     row, col = bathyelli_dataset.index(lon, lat)

@@ -533,7 +533,8 @@ class TxtReader(Reader):
     Args:
         Reader (_type_): _description_
     """
-    PATTERN = re.compile(r"^.*\.(?:txt|csv)$")
+    # PATTERN = re.compile(r"^.*\.(?:txt|csv|hfs)$")
+    PATTERN = re.compile(r"^.*(?:\.(?:txt|csv|hfs)|_ch_res(?:\.(?:txt|csv|hfs))?)$")
 
     def __init__(self, path :str, filename :str):
         """_summary_
@@ -644,6 +645,9 @@ class CsvReader(TxtReader):
 
     PATTERN = re.compile(r"^.*\.csv$")
 
+    def __init__(self, path :str, filename :str):
+        super().__init__(path, filename)
+
     def read(self, **kwargs) -> pd.DataFrame:
         """Parse the csv file into a DataFrame, bypassing
         TxtReader.read() (no need for the raw-string intermediate step).
@@ -661,7 +665,112 @@ class CsvReader(TxtReader):
         except FileNotFoundError:
             logging.error("%s doesn't exist", os.path.join(self.path, self.filename))
 
+
+class HFSReader(TxtReader):
+    """
+    Returns an object containing a dataframe from a HFS file
+
+    """
+
+    PATTERN = re.compile(r"^.*\.hfs$")
+
+    def __init__(self, path :str, filename :str):
+        super().__init__(path, filename)
+
+    def read(self, **kwargs) -> pd.DataFrame:
+        """ Data reading"""
+
+        try:
+            df = pd.read_csv(os.path.join(self.path, self.filename),
+                             sep=' ',
+                             engine='python',
+                             header=None,
+                             names=['day_of_year', 'time_of_day', 'ssh'],
+                             parse_dates={'time': ['day_of_year', 'time_of_day']},
+                             dtype={"ssh": "float64"}
+                            )
+
+        except:
+           logging.error('Error while reading {0}'.format(os.path.join(self.path, self.filename)))
+           df = pd.DataFrame()
+
+        return df
+
+
+class AH1DReader(TxtReader):
+    """Reader for harmonic-analysis comparison files of the form:
+
+        ======LECTURE========
+         itide:           1 Composante:NIV MOY
+         CONSTANTES:   306.81000000000000        0.0000000000000000        1.0000000000000000
+         ANHARMO   :  0.90960258720850018        180.00000000000000
+
+    Each block describes one tidal component:
+        - itide       : integer index of the component
+        - Composante  : name of the component (e.g. "M2", "K1", ...)
+        - CONSTANTES  : expected (amplitude, phase, weight)
+        - ANHARMO     : computed/evaluated equivalent (amplitude, phase)
+
+    Args:
+        TxtReader (TxtReader): parent text-family reader.
+    """
+
+    # Filename convention assumed below - adjust to match your actual naming.
+    PATTERN = re.compile(r"_ch_res$")
+
+    # Fortran-style doubles can use 'D' or 'E' for the exponent (e.g. 5.02E-002)
+    _FLOAT_RE = r"[-+]?\d+\.\d+(?:[EeDd][-+]?\d+)?"
+
+    _BLOCK_RE = re.compile(
+        r"itide:\s*(?P<itide>\d+)\s*Composante:\s*(?P<name>.+?)\s*\n"
+        r"\s*CONSTANTES:\s*(?P<const_amplitude>{f})\s+(?P<const_phase>{f})\s+(?P<const_weight>{f})\s*\n"
+        r"\s*ANHARMO\s*:\s*(?P<anharmo_amplitude>{f})\s+(?P<anharmo_phase>{f})".format(f=_FLOAT_RE)
+    )
+
+    _FLOAT_COLS = [
+        "const_amplitude", "const_phase", "const_weight",
+        "anharmo_amplitude", "anharmo_phase",
+    ]
+
+    def __init__(self, path: str, filename: str):
+        super().__init__(path, filename)
+
+    @staticmethod
+    def _to_float(s: str) -> float:
+        # Handle Fortran double-precision exponent marker 'D'/'d' -> 'E'
+        return float(s.replace("D", "E").replace("d", "e"))
+
+    def read(self) -> pd.DataFrame:
+        """Parse the LECTURE-style content into a DataFrame.
+
+        One row per component, indexed by `itide`, with columns:
+            name, const_amplitude, const_phase, const_weight,
+            anharmo_amplitude, anharmo_phase
+        All source information is preserved as-is; no columns are
+        dropped or collapsed into a single comparison metric.
+
+        Returns:
+            pd.DataFrame: one row per tidal component.
+        """
+        _content = super().read()
+        if _content is None:
+            self.data = pd.DataFrame()
+            return self.data
+
+        rows = []
+        for match in self._BLOCK_RE.finditer(_content):
+            row = match.groupdict()
+            row["itide"] = int(row["itide"])
+            row["name"] = row["name"].strip()
+            for col in self._FLOAT_COLS:
+                row[col] = self._to_float(row[col])
+            rows.append(row)
+
+        self.data = pd.DataFrame(rows).set_index("itide")[["name"] + self._FLOAT_COLS] \
+            if rows else pd.DataFrame()
+        return self.data
     
+
 class MeshIOReader(Reader):
     """
     Base class for reading mesh files using meshio library.
@@ -946,6 +1055,8 @@ class WhichReader():
                          ('txt', 'info') : InfoTxtReader,
                          ('txt', 'data_minmax') : DataMinMaxTxtReader,
                          ('txt', 'csv') : CsvReader,
+                         ('txt', 'hfs') : HFSReader,
+                         ('txt', 'ah1d') : AH1DReader,
                          #('txt', 'default') : TxtReader,
                          ('msh', 'data') : DataMshReader,
                          ('msh', 'default') : MshReader,

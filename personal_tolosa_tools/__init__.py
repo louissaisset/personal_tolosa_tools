@@ -15,7 +15,7 @@ from .readers import FileReader, WhichReader, Reader
 from .readers import BinReader, DataBinReader, ConcatDataBinReader
 from .readers import GmshElementBinReader, MeshBinReader
 from .readers import LonLatDegBinReader, LonLatRadBinReader
-from .readers import TxtReader, InfoTxtReader, DataMinMaxTxtReader, CsvReader
+from .readers import TxtReader, InfoTxtReader, DataMinMaxTxtReader, CsvReader, HFSReader, AH1DReader
 # from .readers import OldVTKReader, OldDataVTKReader, OldDiagVTKReader
 from .readers import VTKReader, DataVTKReader, DiagVTKReader
 from .readers import MshReader, DataMshReader
@@ -47,14 +47,14 @@ __all__ = [
     'BinReader', 'DataBinReader', 'ConcatDataBinReader',
     'GmshElementBinReader', 'MeshBinReader',
     'LonLatDegBinReader', 'LonLatRadBinReader',
-    'TxtReader', 'InfoTxtReader', 'DataMinMaxTxtReader', 'CsvReader',
+    'TxtReader', 'InfoTxtReader', 'DataMinMaxTxtReader', 'CsvReader', 'HFSReader', 'AH1DReader',
     'VTKReader', 'DataVTKReader', 'DiagVTKReader',
     'MshReader', 'DataMshReader', 
     'TecplotReader', 'DataTecplotReader',
     # 'FileReader', 'WhichReader', 'VTKDataReader',
     # 'LonLatDeg', 'LonLatRad', 'BinReader', 'GmshElement', 'Data', 'Mesh',
     # 'TxtReader', 'DataMinMax', 'Info',
-    'DataProcessor', 'VTKDataProcessor', 'BinDataProcessor', MeshDataProcessor,
+    'DataProcessor', 'VTKDataProcessor', 'BinDataProcessor', 'MeshDataProcessor',
     'YAMLHandler', 'FileHandler', 'YAMLEditor',
     'files_for_timesteps', 'files_for_timestep',
     'process_bin', 'process_vtk',

@@ -16,12 +16,6 @@ import matplotlib as mpl
 mpl.use('agg')
 import matplotlib.pyplot as plt
 
-if os.uname()[1].startswith('belenos'):
-    path_tolosa_path = "~/SAVE/DATA/Scripts/personal_tolosa_tools/"
-else:
-    path_tolosa_path = "~/DATA/Scripts/personal_tolosa_tools/"
-os.environ['PATH'] += os.pathsep + os.path.expanduser(f'{path_tolosa_path}/scripts/tools/')
-sys.path.append(os.path.expanduser(path_tolosa_path))
 import personal_tolosa_tools as ptt
 
 

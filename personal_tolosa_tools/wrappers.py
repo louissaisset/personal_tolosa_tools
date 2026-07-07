@@ -6,7 +6,7 @@ A series of usefull wrappers to be used in multiple tools
 
 import sys
 from .common import p_error, p_ok
-from .processors import VTKDataProcessor, BinDataProcessor, MeshDataProcessor
+from .processors import MeshDataProcessor
 from .readers import FileReader, InfoTxtReader, DataBinReader, MeshBinReader, DataVTKReader
 
 from dask import delayed
