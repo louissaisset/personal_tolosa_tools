@@ -636,7 +636,7 @@ class Plotter:
         tricontour_tri: mpl.tri.Triangulation,
         cell_centers_array: np.ndarray,
         cell_data: typing.Dict,
-        point_data,
+        point_data: typing.Dict,
     ) -> tuple[plt.Figure, plt.Axes] | None:
         """
         Plot data on an unstructured (triangle) mesh.
@@ -653,8 +653,8 @@ class Plotter:
             Cell-centre coordinates used by the quiver layer.
         cell_data : dict
             Cell-centred data arrays.
-        point_data : array-like
-            Node-centred data arrays (used when ``scatter_from_points`` is True).
+        point_data : dict
+            Node-centred dictionary of data arrays (used when ``scatter_from_points`` is True).
         """
         fig, ax = self._setup_figure()
         mappable = None
@@ -695,16 +695,17 @@ class Plotter:
             ax.clabel(cs, fontsize=self.contour_fontsize)
 
         if self.scatter_c_key:
+            print(point_data[self.scatter_c_key])
             if self.scatter_from_points:
                 x, y = points_array[:, 0], points_array[:, 1]
-                data = point_data.squeeze()
+                data = point_data[self.scatter_c_key].squeeze()
             else:
                 x, y = cell_centers_array[:, 0], cell_centers_array[:, 1]
                 data = cell_data.squeeze()
             ax.scatter(
                 x,
                 y,
-                c=data[self.scatter_c_key],
+                c=data,
                 s=self.scatter_s,
                 vmin=self.scatter_min,
                 vmax=self.scatter_max,

@@ -8,6 +8,7 @@ from abc import ABC, abstractmethod
 from datetime import datetime as dt
 import numpy as np
 import pandas as pd
+import xarray as xr
 
 # Ajouts Louis
 import vtk
@@ -18,7 +19,7 @@ from meshio import Mesh
 # strategy factory pattern ?
 class Reader(ABC):
     # PATTERN = re.compile(r"^(?P<name>[a-z_]*)(?:_(?P<num>\d{6}))?\.(?P<ext>bin|txt|vtk|plt|msh)$")
-    PATTERN = re.compile(r"^.*\.(?P<ext>bin|txt|vtk|plt|msh|csv)$")
+    PATTERN = re.compile(r"^.*\.(?P<ext>bin|txt|vtk|plt|msh|csv|hfs|nc)$")
     
     @abstractmethod
     def read(self, **kwargs):
@@ -41,7 +42,33 @@ class Reader(ABC):
     def search(cls, filename :str) -> bool:
         return cls.test_filename(filename)
     
-    
+# default class reader
+class NcReader(Reader):
+    """_summary_
+
+    Args:
+        Reader (_type_): _description_
+    """
+    PATTERN = re.compile(r"^.*\.nc$")
+
+    def __init__(self, path :str, filename :str):
+        """_summary_
+
+        Args:
+            path (str): _description_
+            filename (str): _description_
+        """
+        self.path = path
+        self.filename = filename
+
+    def read(self):
+        """_summary_
+        """
+        try:
+            return xr.open_dataset(os.path.join(self.path, self.filename))
+            
+        except FileNotFoundError:
+            logging.error("%s doesn\'t exist", os.path.join(self.path, self.filename))
 
 # default class reader
 class BinReader(Reader):
@@ -533,7 +560,6 @@ class TxtReader(Reader):
     Args:
         Reader (_type_): _description_
     """
-    # PATTERN = re.compile(r"^.*\.(?:txt|csv|hfs)$")
     PATTERN = re.compile(r"^.*(?:\.(?:txt|csv|hfs)|_ch_res(?:\.(?:txt|csv|hfs))?)$")
 
     def __init__(self, path :str, filename :str):
@@ -682,13 +708,14 @@ class HFSReader(TxtReader):
 
         try:
             df = pd.read_csv(os.path.join(self.path, self.filename),
-                             sep=' ',
+                             sep=r'\s+',
                              engine='python',
                              header=None,
                              names=['day_of_year', 'time_of_day', 'ssh'],
-                             parse_dates={'time': ['day_of_year', 'time_of_day']},
                              dtype={"ssh": "float64"}
                             )
+            df['time'] = pd.to_datetime(df['day_of_year'] + ' ' + df['time_of_day'])
+            df = df.drop(columns=['day_of_year', 'time_of_day'])
 
         except:
            logging.error('Error while reading {0}'.format(os.path.join(self.path, self.filename)))
@@ -716,7 +743,7 @@ class AH1DReader(TxtReader):
     """
 
     # Filename convention assumed below - adjust to match your actual naming.
-    PATTERN = re.compile(r"_ch_res$")
+    PATTERN = re.compile(r"^.*_ch_res(?:\.(?:txt|csv|hfs))?$")
 
     # Fortran-style doubles can use 'D' or 'E' for the exponent (e.g. 5.02E-002)
     _FLOAT_RE = r"[-+]?\d+\.\d+(?:[EeDd][-+]?\d+)?"
@@ -1019,7 +1046,7 @@ class DiagVTKReader(VTKReader):
     Reader for data-containing VTK files using meshio.
     Specifically handles files with the diagnostic output data.
     """
-    PATTERN = re.compile(r"^.*\_diag*\.vtk$")
+    PATTERN = re.compile(r"^.*_diag\.vtk$")
     
     def __init__(self, path: str, filename: str):
         super().__init__(path, filename)
@@ -1051,6 +1078,7 @@ class WhichReader():
                          ('bin', 'lon_lat_degrees') : LonLatDegBinReader,
                          ('bin', 'lon_lat_radians') : LonLatRadBinReader,
                          ('bin', 'mesh') : MeshBinReader,
+                         ('nc', 'default') : NcReader,
                          #('bin', 'default') : BinReader,
                          ('txt', 'info') : InfoTxtReader,
                          ('txt', 'data_minmax') : DataMinMaxTxtReader,
@@ -1086,7 +1114,36 @@ class WhichReader():
             else:
                 if reader.__name__ == readername:
                     return reader
+                
+    def list_readable(self, path: str = ".") -> list:
+        """List files in `path` matched to a reader class.
 
+        Args:
+            path (str): directory to scan. Defaults to cwd.
+
+        Returns:
+            list[tuple[type, str]]: (reader_class, filename) pairs,
+                sorted by filename. Files not matching any registered
+                pattern, and non-files (directories, symlinks to dirs,
+                hidden dotfiles), are silently skipped.
+        """
+        try:
+            entries = sorted(os.listdir(path))
+        except FileNotFoundError:
+            logging.error("%s doesn't exist", path)
+            raise FileNotFoundError
+
+        results = []
+        for filename in entries:
+            full = os.path.join(path, filename)
+            if not os.path.isfile(full) or filename.startswith('.'):
+                continue
+
+            reader = self.get_reader(filename)
+            if reader is not None:
+                results.append((reader, full))
+
+        return results
  
 # facade      
 class FileReader:
@@ -1097,6 +1154,25 @@ class FileReader:
         """
         self._which_rdr = WhichReader()
         self._cache_readers = {} # registery of already created reader instances
+    
+    def readable(self, path: str = ".", verbose: bool = True) -> list:
+        """List the files in `path` that a reader is registered for.
+
+        Args:
+            path (str): directory to scan. Defaults to cwd.
+            verbose (bool): if True, print "ReaderClass filename" per
+                match (mirrors `ls`-style output). Defaults to True.
+
+        Returns:
+            list[tuple[type, str]]: (reader_class, filename) pairs.
+        """
+        results = self._which_rdr.list_readable(path)
+
+        if verbose:
+            for reader, filename in results:
+                print(f"{reader.__name__} {filename}")
+            print()
+        return results
 
     def read_file(self, path : str, filename : str, readername : str=None, **kwargs): # forced readername if exists
         """

@@ -6,9 +6,8 @@ Created on Mon Feb 23 09:59:19 2026
 @author: llsaisset
 """
 
-
-
-import sys, os
+import sys
+import os
 import personal_tolosa_tools as ptt
 
 import argparse

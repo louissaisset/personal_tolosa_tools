@@ -34,7 +34,7 @@ from shapely.ops import linemerge
 # from rasterio.features import rasterize
 # from affine import Affine
 
-from .common import p_error, p_ok, p_warning, p_timer
+from .common import p_error, p_warning, p_timer
 
 import matplotlib as mpl
 
